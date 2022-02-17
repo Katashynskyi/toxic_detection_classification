@@ -1,0 +1,3 @@
+# Toxic detection classification
+# right now it's possible only to check eda.ipynb
+# work in progress...

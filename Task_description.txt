@@ -1,0 +1,20 @@
+In the data supplied for this challenge, the text of the individual comment is found in
+the comment_text column. Each comment in Train (tox_train.csv) has a toxicity label (target), and models
+should predict the target toxicity for the Test data (tox_test.csv). For evaluation, test set examples
+with target >= 0.5 will be considered to be in the positive class (toxic).
+The data also has several additional toxicity subtype attributes. Subtype attributes are:
+* severe_toxicity
+* obscene
+* threat
+* insult
+* identity_attack
+
+The goal of this challenge is to develop a model to predict target column, i.e. the level of toxicity of a
+given comment, while 0 is non-toxic, and 1 is maximum level of toxicity.
+Secondary goal is to detect additional subtypes of toxicity
+---
+ I'm looking for the following from your output:
+1. Models should be developed in Python language, additional frameworks are allowed e.g. Keras, Tensorflow, PyTorch etc.
+2. Pay additional attention to the data preparation step and data preprocessing and also choose evaluation metrics wisely
+3. Solutions for this challenge are available in the data science community, but I will know if this is a unique solution
+ or a copied one, so plagiarism is not welcomed at all.
