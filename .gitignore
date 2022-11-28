@@ -1,8 +1,8 @@
 .ipynb_checkpoints/
 .idea/
 Task_description.txt
-/data
-
+data/
+src/temp/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
