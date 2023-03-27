@@ -1,4 +1,9 @@
+# morea_MY
+run_train.sh
+run_train.py
+test.py
 .ipynb_checkpoints/
+mlruns/
 .idea/
 Task_description.txt
 data/
@@ -132,3 +137,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
