@@ -280,11 +280,10 @@ class Preprocessor:
     -----------
     n_samples:int
 
-
     Returns:
     --------
     df : csr_matrix
-        TF-IDF embedding + additional features
+        TF-IDF embedding combined with additional features
     """
 
     def __init__(self, n_samples=100,
@@ -319,6 +318,7 @@ if __name__ == '__main__':
     from sklearn.pipeline import make_pipeline
     from sklearn.svm import LinearSVC
     from sklearn.metrics import classification_report, confusion_matrix
+
     path = "../../../../DB's/Toxic_database/tox_train.csv"
 
     """ReadPrepare & Split parts"""
@@ -329,8 +329,9 @@ if __name__ == '__main__':
     model = LinearSVC(random_state=42, tol=1e-5)
     """Fit transform"""
     pl = make_pipeline(Preprocessor(), model)
-    pl.fit(train_X,train_y)
-    pred_y=pl.predict(train_X)
+    pl.fit(train_X, train_y)
+    pred_y = pl.predict(train_X)
     "metrics"
-    print(pd.DataFrame(classification_report(y_true=train_y, y_pred=pred_y, output_dict=1,target_names=['non-toxic', 'toxic'])).transpose())
+    print(pd.DataFrame(classification_report(y_true=train_y, y_pred=pred_y, output_dict=1,
+                                             target_names=['non-toxic', 'toxic'])).transpose())
     print(confusion_matrix(y_true=train_y, y_pred=pred_y))
