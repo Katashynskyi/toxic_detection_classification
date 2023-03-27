@@ -1,68 +1,199 @@
-from src.utils.preprocessor import ReadPrepare, Split
-from src.utils.tf_idf_vectorizer import Tfidf, AddingFeatures,CompileFeatures
+import argparse
+import pickle
+import mlflow.sklearn
+from mlflow import log_metric, log_param, log_artifacts
+import pandas as pd
+import numpy as np
+import os
+import warnings
+from sklearn.pipeline import make_pipeline
+from src.utils.features_preprocessing import CustomTfidf, Preprocessor
+from src.utils.utils import ReadPrepare, Split
+from sklearn.svm import SVC
+from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix
+import logging as logger
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+import optuna
+from optuna.integration import OptunaSearchCV
+from xgboost import XGBClassifier
+import lightgbm as lgb
+
+warnings.filterwarnings('ignore')
+logger.getLogger().setLevel(logger.INFO)
+# logger.basicConfig(filename='log_file.log',
+#                     encoding='utf-8',filemode='w')
+# path = "../../DB's/Toxic_database/tox_train.csv"  # relative path
+# path = "D:/Programming/DB's/Toxic_database/tox_train.csv"  # absolute path
+
+RANDOM_STATE = 42
 
 
-path = "../../../DB's/Toxic_database/tox_train.csv"
-path = "D:/Programming/DB's/Toxic_database/tox_train.csv"
+class ClassifierModel:
+    def __init__(self,
+                 input_data,
+                 n_samples=800,
+                 tfidf_max_feat=500,
+                 classifier_type: str = 'basemodel',
+                 vectorizer=CustomTfidf(),
+                 pipeline=None):
+        self.input_data = input_data
+        self.n_samples = n_samples
+        self.max_feat = tfidf_max_feat
+        self.classifier_type = classifier_type
+        self.vectorizer_type = vectorizer
+        self.pipeline = pipeline
+        self.x_train = self.y_train = self.x_test = self.y_test = None
 
-"""ReadPrepare"""
-r = ReadPrepare(path, n_samples=200)#shape (200, 8)
-"""Split"""
-s = Split(r.get_file())  # передаєм метод read_file, щоб підчистить датасет
-# print(s.get_train_data())  # отримати поділений датасет. tuple of X_train & y_train
+    def __training_setup(self):
+        """ReadPrepare & Split parts"""
+        df = ReadPrepare(self.input_data, self.n_samples).fit_transform()
+        self.train_X, self.train_y = Split(df=df).get_train_data()
+        self.test_X, self.test_y = Split(df=df).get_test_data()
 
-X_train, y_train = s.get_train_data()
-X_test, y_test = s.get_test_data()
-"""TFIDF"""
-t = Tfidf()  # X_train краще передавати в ці дужки
-tfidf_X_train = t.fit_transform(X_train)
-tfidf_X_test = t.transform(X_test)
-# print(t.save())
-# print(t.load()) #  class 'scipy.sparse._csr.csr_matrix'>   (0, 49)
+        """Vectorizer"""
+        pass
 
-"""AddingFeatures"""
-a=AddingFeatures(X_train)
-a2=AddingFeatures(X_test)
-inderect_f = {'count_word', 'count_unique_word', 'count_letters', 'count_punctuations', 'count_words_upper',
-              'count_words_title', 'count_stopwords', 'mean_word_len', 'word_unique_percent', 'punct_percent'}
-# print(a.get()[inderect_f]) #  [162 rows x 10 columns]
-# print(a2.get()[inderect_f]) #  [20 rows x 10 columns]
+        """Model pipeline"""
+        if self.classifier_type == 'basemodel':
+            svc_pipeline = make_pipeline(Preprocessor(), SVC(random_state=RANDOM_STATE, kernel='linear', degree=1))
+            """init hyper-param"""
+            param_distributions = {"svc__C": optuna.distributions.FloatDistribution(1e-10, 1e10)}  # ,
+            # "svc__gamma":optuna.distributions.FloatDistribution(1e-4,1)}
+            self.pipeline = OptunaSearchCV(svc_pipeline, param_distributions,
+                                           cv=StratifiedKFold(n_splits=3, shuffle=True),
+                                           n_trials=1, random_state=42, verbose=0)
 
-"""CompileFeatures"""
-c=CompileFeatures(a.get())
-c1=CompileFeatures(a2.get())
-# print(c.fit_transform(),type(c.fit_transform())) #  <class 'numpy.ndarray'>
-# print(c.convert_np_to_csr(),type(c.convert_np_to_csr())) #  <class 'scipy.sparse._csr.csr_matrix'>
+        elif self.classifier_type == "xgboost":
+            xgb_pipeline = make_pipeline(Preprocessor(), XGBClassifier())  # colsample_bytree=0.7, learning_rate=0.05,
+            #                                                         max_depth=5,min_child_weight=11, n_estimators=1000,
+            #                                                         n_jobs=4,objective='binary:multiclass',
+            #                                                         random_state=RANDOM_STATE, subsample=0.8))
+            """init hyper-param"""
+            param_distributions = {}
+            # param_distributions = {
+            #     'clf__njobs': [4],
+            #     'clf__objective': ['multiclass'],
+            #     'clf__learning_rate': [0.05],
+            #     'clf__max_depth': [6, 12, 18],
+            #     'clf__min_child_weight': [11, 13, 15],
+            #     'clf__subsample': [0.7, 0.8],
+            #     'clf__colsample_bytree': [0.6, 0.7],
+            #     'clf__n_estimators': [5, 50, 100, 1000],
+            #     'clf__missing': [-999],
+            #     'clf__random_state': [RANDOM_STATE]
+            # }
+            self.pipeline = OptunaSearchCV(xgb_pipeline, param_distributions,
+                                           cv=StratifiedKFold(n_splits=3, shuffle=True),
+                                           n_trials=1, random_state=42, verbose=0)
 
-sparce_train=c.stack(tfidf_X_train,c.convert_np_to_csr()) #  numpy.ndarray to sparse matrix numpy.float64
-# print(sparce_train)
-sparce_test=c.stack(tfidf_X_test,c1.convert_np_to_csr()) #  numpy.ndarray to sparse matrix numpy.float64
-print(sparce_test) # OK
+        elif self.classifier_type == 'lgbm':
+            lgbm_pipeline = make_pipeline(Preprocessor(), lgb.LGBMClassifier())
+            """init hyper-param"""
+            param_distributions = {}
+            # param_distributions = {'num_leaves': 5,
+            #           'objective': 'multiclass',
+            #           'num_class': len(np.unique(self.y_train)),
+            #           'learning_rate': 0.01,
+            #           'max_depth': 5,
+            #           'random_state': RANDOM_STATE}
+            self.pipeline = OptunaSearchCV(lgbm_pipeline, param_distributions,
+                                           cv=StratifiedKFold(n_splits=3, shuffle=True),
+                                           n_trials=1, random_state=42, verbose=0)
+
+    def train(self, run_version=None):
+        """... and one method to rule them all. (c)"""
+        self.__training_setup()
+        train_X, train_y = self.train_X, self.train_y
+        """MLFlow Config"""
+        logger.info("Setting up MLFlow Config")
+        mlflow.set_experiment('Toxicity_classifier_model')
+        # """Search for previous runs and get run_id if present"""
+        # logger.info("Searching for previous runs for given model type")
+        # df_runs = mlflow.search_runs(filter_string="tags.Model = '{0}'".format('XGB'))
+        # df_runs = df_runs.loc[~df_runs['tags.Version'].isna(), :] if 'tags.Version' in df_runs else pd.DataFrame()
+        # run_id = df_runs.loc[df_runs['tags.Version'] == run_version, 'run_id'].iloc[0]
+        # run_id =3
+        # load_prev = True
+        # run_version = len(df_runs) + 1
+
+        """Start the MLFlow Run and train the model"""
+        with mlflow.start_run(run_id=None):
+            """Train & predict"""
+            self.pipeline.fit(train_X, train_y)
+            logger.info("train is done")
+            pred_y = self.pipeline.predict(train_X)
+            # self.pipeline.save()
+            """classification report on train set"""
+            df = pd.DataFrame(classification_report(y_true=train_y, y_pred=pred_y, output_dict=1,
+                                                    target_names=['non-toxic', 'toxic'])).transpose()
+            # logger.info(f"\n\nTrain metric.")
+            # print(df)
+
+            """cross_val_score(nested_CV) on train set"""
+            # kf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            # score=cross_val_score(self.pipeline,train_X,train_y,cv=StratifiedKFold(n_splits=3, shuffle=True))
+            # logger.info(f"cross_val_score : {score.mean()}")
+
+            """Log model metrics"""
+            logger.info(
+                f"\n {pd.DataFrame(classification_report(train_y, pred_y, output_dict=1, target_names=['non-toxic', 'toxic'])).transpose()}")
+            logger.info(f"Area Under the Curve score: {round(roc_auc_score(train_y, pred_y), 2)}")
+            logger.info(f"\n [true negatives  false positives]\n [false negatives  true positives] \
+                        \n {confusion_matrix(train_y, pred_y)}")
+
+            # logger.info(" Logging results into file_log.log")
+            logger.info("Training Complete. Logging results into MLFlow")
+            mlflow.log_metric("macro_f1", np.round(df.loc["macro avg", "f1-score"], 5))
+            mlflow.log_metric("weighted_f1", np.round(df.loc["weighted avg", "f1-score"], 5))
+            df = df.reset_index()
+            df.columns = ['category', 'precision', 'recall', 'f1-score', 'support']
+            # df.to_csv("toxicity_full_report.csv")
+            # mlflow.log_artifact("toxicity_full_report.csv")
+            mlflow.log_param("Best Params", {k: round(v, 2) for k, v in self.pipeline.best_params_.items()})
+            mlflow.log_param("Best Score", "%.2f " % self.pipeline.best_score_)
+            # os.remove("toxicity_full_report.csv")
+            """Save model"""
+            mlflow.sklearn.log_model(self.pipeline,
+                                     artifact_path='D:\Programming\Repositories\\toxic_detection_classification\data\model_log',
+                                     serialization_format='pickle')
+            mlflow.set_tag("Model", self.classifier_type)
+            # mlflow.set_tag("Version", run_version)
+            logger.info("Model Trained and saved into MLFlow artifact location")
+
+            """Test set metrics """
+            # predict_y = pipeline.predict(test_X)
+            # logger.info(f"\n\nTest metrics.")
+            # logger.info(classification_report(test_y, pred_y, target_names=['Not_toxic', 'Toxic']))
+            # logger.info(f"Area Under the Curve score: {round(roc_auc_score(test_y, pred_y), 2)}")
+            # logger.info(f"\n [true negatives  false negatives]\n [true positives  false positives]")
+            # logger.info(f"\n{confusion_matrix(test_y, pred_y)}")
+            # logger.info("Testing completed.")
 
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('--path',
+                        help='Data path',
+                        default="../../DB's/Toxic_database/tox_train.csv")
+    parser.add_argument('--n_samples',
+                        help='How many samples to pass?',
+                        default=800)
+    parser.add_argument('--type_of_run',
+                        help='"train" of "inference"?',
+                        default='train')
+    parser.add_argument('--classifier_type',
+                        help='Choose "basemodel", "xgboost" or "lightgbm"',
+                        default='lgbm')
+    args = parser.parse_args()
 
+    if args.type_of_run == 'train':
+        classifier = ClassifierModel(input_data=args.path, n_samples=args.n_samples,
+                                     classifier_type=args.classifier_type)  # put train params
+        classifier.train()
 
-
-
-"""tfidf_X_train = tfidf.fit_transform(X_train)
-tfidf_X_test = tfidf.transform(X_test)
-
-X_train_w_inderect_f = adding_inderect_features(X_train)
-X_test_w_inderect_f = adding_inderect_features(X_test)
-
-inderect_f = set(list(X_train_w_inderect_f.columns)) - set(list(X_train.to_frame(name='comment_text')))
-
-scaler_1 = MinMaxScaler()  # also add Scale, norm
-scaled_X_train_only_features = scaler_1.fit_transform(X_train_w_inderect_f[inderect_f])
-
-scaled_X_test_only_features = scaler_1.fit_transform(X_test_w_inderect_f[inderect_f])
-
-
-sparce_scaled_X_train_only_features = scipy.sparse.csr_matrix(scaled_X_train_only_features)  # convert np matrix to csr matrix
-
-sparce_train = hstack((tfidf_X_train, sparce_scaled_X_train_only_features))
-1416514x10 numpy.ndarray to sparse matrix numpy.float64
-sparce_scaled_X_test_only_features = scipy.sparse.csr_matrix(
-    scaled_X_test_only_features)  # convert np matrix to csr matrix
-
-sparce_test = hstack((tfidf_X_test, sparce_scaled_X_test_only_features))"""
+    # if args.type_of_run=='inference':
+    #     with open('data/tfidf.pk', 'r') as f:
+    #         tfidf=pickle.load(f)
+    #     import model in pickle too
+    #     classifier = ClassifierModel()  # put inference params
+    #     classifier.predict()
