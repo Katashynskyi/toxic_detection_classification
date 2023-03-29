@@ -29,15 +29,7 @@ class ReadPrepare:
         self.path = path
         self.n_samples = n_samples
 
-    def fit(self):
-        """Does nothing, use fit_transform instead."""
-        pass
-
-    def transform(self):
-        """Does nothing, use fit_transform instead."""
-        pass
-
-    def fit_transform(self) -> pd.DataFrame:
+    def data_process(self) -> pd.DataFrame:
         if self.n_samples:
             df = pd.read_csv(self.path).tail(self.n_samples)
         else:
@@ -63,11 +55,11 @@ class Split:
     Returns:
     --------
     .get_train_data(): -> tuple[pd.DataFrame, pd.DataFrame
-        X_train, y_train : A splitted DataFrame
-    and | or
+        X_train, y_train : A separated DataFrame
+    or
 
     .get_test_data(): -> tuple[pd.DataFrame, pd.DataFrame]
-        X_test, y_test : A splitted DataFrame
+        X_test, y_test : A separated DataFrame
     """
 
     def __init__(self,
@@ -81,23 +73,13 @@ class Split:
         self._X_train = self._y_train = pd.DataFrame()
         self._X_test = self._y_test = pd.DataFrame()
 
-    def fit(self):
-        """Does nothing, use get_train_data & get_test_data instead."""
-        return self
-
-    def transform(self):
-        """Does nothing, use get_train_data & get_test_data instead."""
-        return self
-
-    def fit_transform(self):
+    def _split(self):
         """
         Processing the input DataFrame into train and test sets.
-        Use get_train_data & get_test_data methods instead.
-
-        Use get_train_data & get_test_data instead.
+        Use get_train_data & get_test_data methods .
 
         Returns:
-        self
+            self
         """
         df = self._df
         df = shuffle(df, random_state=RANDOM_STATE)
@@ -116,7 +98,7 @@ class Split:
         Returns:
             A tuple of X_train & y_train
         """
-        self.fit_transform()
+        self._split()
         return self._X_train, self._y_train
 
     def get_test_data(self) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -126,23 +108,39 @@ class Split:
         Returns:
             A tuple of X_test & y_test
         """
-        self.fit_transform()
+        self._split()
         return self._X_test, self._y_test
 
 
 if __name__ == '__main__':
+    from sklearn.pipeline import make_pipeline
+    from sklearn.svm import LinearSVC
+    from sklearn.metrics import classification_report, confusion_matrix
+    from features_preprocessing import Preprocessor
+
     path = "../../../../DB's/Toxic_database/tox_train.csv"
-    rp = ReadPrepare(path=path, n_samples=-1).fit_transform()  # csv -> pd.DataFrame
+    rp = ReadPrepare(path=path, n_samples=-1).data_process()  # csv -> pd.DataFrame
     """Problem"""
     # pd.set_option('display.max_columns', 2)
     # pd.set_option('display.max_rows', 500)
     # rp=rp.sort_values(by='comment_text')['comment_text']
     # print(rp.tail(200))
     '-------------------'
-    splitter = Split(df=rp).fit_transform()  # pd.DataFrame ->
+    splitter = Split(df=rp)
     train_X, train_y = splitter.get_train_data()  # -> pd.DataFrame
     test_X, test_y = splitter.get_test_data()  # -> pd.DataFrame
     print(f"train_X {train_X.tail()}")
     print(f"train_y {train_y.tail()}")
     print(f"test_X {test_X.tail()}")
     print(f"test_y {test_y.tail()}")
+
+    """Baseline model"""
+    model = LinearSVC(random_state=42, tol=1e-5)
+    """Fit transform"""
+    pl = make_pipeline(Preprocessor(), model)
+    pl.fit(train_X, train_y)
+    pred_y = pl.predict(train_X)
+    "metrics"
+    print(pd.DataFrame(classification_report(y_true=train_y, y_pred=pred_y, output_dict=1,
+                                             target_names=['non-toxic', 'toxic'])).transpose())
+    print(confusion_matrix(y_true=train_y, y_pred=pred_y))

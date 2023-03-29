@@ -7,7 +7,7 @@ import numpy as np
 import os
 import warnings
 from sklearn.pipeline import make_pipeline
-from src.utils.features_preprocessing import CustomTfidf, Preprocessor
+from src.utils.features_preprocessing import Preprocessor
 from src.utils.utils import ReadPrepare, Split
 from sklearn.svm import SVC
 from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix
@@ -34,19 +34,19 @@ class ClassifierModel:
                  n_samples=800,
                  tfidf_max_feat=500,
                  classifier_type: str = 'basemodel',
-                 vectorizer=CustomTfidf(),
+                 vectorizer: str = 'tfidf',
                  pipeline=None):
         self.input_data = input_data
         self.n_samples = n_samples
         self.max_feat = tfidf_max_feat
         self.classifier_type = classifier_type
-        self.vectorizer_type = vectorizer
+        self.vectorizer = vectorizer
         self.pipeline = pipeline
         self.x_train = self.y_train = self.x_test = self.y_test = None
 
     def __training_setup(self):
         """ReadPrepare & Split parts"""
-        df = ReadPrepare(self.input_data, self.n_samples).fit_transform()
+        df = ReadPrepare(self.input_data, self.n_samples).data_process()
         self.train_X, self.train_y = Split(df=df).get_train_data()
         self.test_X, self.test_y = Split(df=df).get_test_data()
 
@@ -107,7 +107,7 @@ class ClassifierModel:
         """MLFlow Config"""
         logger.info("Setting up MLFlow Config")
         mlflow.set_experiment('Toxicity_classifier_model')
-        # """Search for previous runs and get run_id if present"""
+        """Search for previous runs and get run_id if present"""
         # logger.info("Searching for previous runs for given model type")
         # df_runs = mlflow.search_runs(filter_string="tags.Model = '{0}'".format('XGB'))
         # df_runs = df_runs.loc[~df_runs['tags.Version'].isna(), :] if 'tags.Version' in df_runs else pd.DataFrame()
@@ -184,11 +184,14 @@ if __name__ == '__main__':
     parser.add_argument('--classifier_type',
                         help='Choose "basemodel", "xgboost" or "lightgbm"',
                         default='lgbm')
+    parser.add_argument('--vectorizer',
+                        help='Choose "tfidf" or "spacy"',
+                        default='tfidf')
     args = parser.parse_args()
 
     if args.type_of_run == 'train':
         classifier = ClassifierModel(input_data=args.path, n_samples=args.n_samples,
-                                     classifier_type=args.classifier_type)  # put train params
+                                     classifier_type=args.classifier_type,vectorizer=args.vectorizer)
         classifier.train()
 
     # if args.type_of_run=='inference':

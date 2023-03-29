@@ -7,7 +7,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from scipy.sparse import csr_matrix, hstack
 import pickle
 
-'hi there'
+
 class CustomTfidf:
     """
     Creating a TF-IDF vectorizer.
@@ -287,25 +287,24 @@ class Preprocessor:
     """
 
     def __init__(self, n_samples=100,
-                 vectorizer=CustomTfidf(),
-                 adder_indirect_features=AddingFeatures()):
+                 vectorizer: str = None):
         self.n_samples = n_samples
-        self.vec = vectorizer
-        self.adding_indirect_f = adder_indirect_features
+        self.vectorizer = vectorizer
+        self.adding_indirect_f = AddingFeatures()
 
     def fit(self, x, y=None):
-        self.vec.fit(x)
+        self.vectorizer.fit(x)
         self.adding_indirect_f.fit(x)
         return self
 
     def transform(self, x, y=None):
-        tfidf_X = self.vec.transform(x)
-        inderect_sparse_f = self.adding_indirect_f.transform(x)
-        return hstack((tfidf_X, inderect_sparse_f))
+        tfidf_X = self.vectorizer.transform(x)
+        indirect_sparse_f = self.adding_indirect_f.transform(x)
+        return hstack((tfidf_X, indirect_sparse_f))
 
     def fit_transform(self, x, y=None):
         """TFIDF part"""
-        tfidf_X = self.vec.fit_transform(x)  # pd.DataFrame ->
+        tfidf_X = self.vectorizer.fit_transform(x)  # pd.DataFrame ->
         # tfidf_X.save()  # -> tfidf.pickle
         """Adding features part"""
         indirect_sparse_f = self.adding_indirect_f.fit_transform(x)
@@ -322,7 +321,7 @@ if __name__ == '__main__':
     path = "../../../../DB's/Toxic_database/tox_train.csv"
 
     """ReadPrepare & Split parts"""
-    df = ReadPrepare(path, 1200).fit_transform()
+    df = ReadPrepare(path, 1200).data_process()
     train_X, train_y = Split(df=df).get_train_data()
 
     """Baseline model"""
