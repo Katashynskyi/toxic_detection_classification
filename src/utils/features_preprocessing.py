@@ -8,9 +8,9 @@ from scipy.sparse import csr_matrix, hstack
 import pickle
 
 
-class CustomTfidf:
+class _CustomTfidf:
     """
-    Creating a TF-IDF vectorizer.
+    Creates customized TF-IDF vectorizer.
 
     Parameters:
     -----------
@@ -32,7 +32,7 @@ class CustomTfidf:
                  max_df: float = 0.8,
                  min_df: float = 10,
                  ngram_range: tuple = (1, 1)):
-        self._tfidf = TfidfVectorizer(ngram_range=ngram_range, max_df=max_df, min_df=min_df)
+        self._tfidf = TfidfVectorizer(input=None, ngram_range=ngram_range, max_df=max_df, min_df=min_df)
         self._dump = None
 
     def fit(self, x: pd.DataFrame):
@@ -124,7 +124,7 @@ class CustomTfidf:
             return pickle.load(file)
 
 
-class AddingFeatures:
+class _AddingFeatures:
     """
     Adding indirect features to "comment_text" column and compile it with tf-idf features.
 
@@ -151,7 +151,7 @@ class AddingFeatures:
 
     stack(self, tfidf: csr_matrix, indirect_features: csr_matrix) -> csr_matrix:
         Stacks the tf-idf and indirect features horizontally to create a single sparse matrix.
-        
+
     Returns:
     --------
     self : csr_matrix
@@ -271,6 +271,7 @@ class AddingFeatures:
         return hstack((tfidf, indirect_features))
 
 
+#  meta-class
 class Preprocessor:
     """
     Preprocessor to transform raw text data into a sparse matrix of features.
@@ -287,10 +288,10 @@ class Preprocessor:
     """
 
     def __init__(self, n_samples=100,
-                 vectorizer: str = None):
+                 vectorizer: str = _CustomTfidf()):
         self.n_samples = n_samples
         self.vectorizer = vectorizer
-        self.adding_indirect_f = AddingFeatures()
+        self.adding_indirect_f = _AddingFeatures()
 
     def fit(self, x, y=None):
         self.vectorizer.fit(x)
@@ -315,7 +316,7 @@ class Preprocessor:
 if __name__ == '__main__':
     from src.utils.utils import ReadPrepare, Split
     from sklearn.pipeline import make_pipeline
-    from sklearn.svm import LinearSVC
+    from sklearn.svm import SVC,LinearSVC
     from sklearn.metrics import classification_report, confusion_matrix
 
     path = "../../../../DB's/Toxic_database/tox_train.csv"
@@ -323,11 +324,35 @@ if __name__ == '__main__':
     """ReadPrepare & Split parts"""
     df = ReadPrepare(path, 1200).data_process()
     train_X, train_y = Split(df=df).get_train_data()
+    a=_CustomTfidf().fit_transform(train_X)
 
     """Baseline model"""
     model = LinearSVC(random_state=42, tol=1e-5)
+# -----------------------------------------
+    import optuna
+    from optuna.integration import OptunaSearchCV
+    from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix, f1_score
+    from sklearn.model_selection import StratifiedKFold
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+    from sklearn.model_selection import cross_val_score
+
+
+    svc_pipeline = make_pipeline(Preprocessor(), SVC(random_state=42, kernel='linear', degree=1))
+    """init hyper-param"""
+    param_distributions = {"preprocessor__??": optuna.distributions.FloatDistribution(1e-10, 1e10)}  # ,
+    # param_distributions = {"svc__C": optuna.distributions.FloatDistribution(1e-10, 1e10)}  # ,
+    # "svc__gamma":optuna.distributions.FloatDistribution(1e-4,1)}
+    pipeline = OptunaSearchCV(svc_pipeline, param_distributions,
+                                   cv=StratifiedKFold(n_splits=3, shuffle=True),
+                                   n_trials=1, random_state=42, verbose=0,scoring=f1_score)
+
+    """Train & predict"""
+    pipeline.fit(train_X, train_y)
+    pred_y = pipeline.predict(train_X)
+
+# -------------------------------------------
     """Fit transform"""
-    pl = make_pipeline(Preprocessor(), model)
+    pl = make_pipeline(Preprocessor(), model) #  <class 'scipy.sparse._csr.csr_matrix'> ### (1071, 621) ###(0, 384)	0.14612288377660107
     pl.fit(train_X, train_y)
     pred_y = pl.predict(train_X)
     "metrics"

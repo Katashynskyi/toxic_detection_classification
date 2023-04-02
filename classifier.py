@@ -61,7 +61,7 @@ class ClassifierModel:
             # "svc__gamma":optuna.distributions.FloatDistribution(1e-4,1)}
             self.pipeline = OptunaSearchCV(svc_pipeline, param_distributions,
                                            cv=StratifiedKFold(n_splits=3, shuffle=True),
-                                           n_trials=1, random_state=42, verbose=0)
+                                           n_trials=1, random_state=42, verbose=0,scoring=None)
 
         elif self.classifier_type == "xgboost":
             xgb_pipeline = make_pipeline(Preprocessor(), XGBClassifier())  # colsample_bytree=0.7, learning_rate=0.05,
