@@ -36,6 +36,7 @@ class ReadPrepare:
             df = pd.read_csv(self.path)
         df.drop_duplicates(keep=False, subset=['comment_text'], inplace=True)  # частково дублікати лишились
         df.reset_index(drop=True, inplace=True)
+        df['target_class'] = (df['target'] >= 0.5).map(int)  # if more than .5 - than toxic.
         return df
 
 
@@ -83,7 +84,6 @@ class Split:
         """
         df = self._df
         df = shuffle(df, random_state=RANDOM_STATE)
-        df['target_class'] = (df['target'] >= 0.5).map(int)  # if more than .5 - than toxic.
         self._X_train, self._X_test, self._y_train, self._y_test = train_test_split(df['comment_text'],
                                                                                     df['target_class'],
                                                                                     stratify=df[self._stratify_by],
@@ -91,7 +91,7 @@ class Split:
                                                                                     random_state=RANDOM_STATE)
         return self
 
-    def get_train_data(self) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def get_train_data(self):# -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Splitting df.
 
@@ -99,17 +99,18 @@ class Split:
             A tuple of X_train & y_train
         """
         self._split()
-        return self._X_train, self._y_train
+        # return self._X_train, self._y_train
+        return self._split()
 
-    def get_test_data(self) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """
-        Splitting df.
-
-        Returns:
-            A tuple of X_test & y_test
-        """
-        self._split()
-        return self._X_test, self._y_test
+    # def get_test_data(self):# -> tuple[pd.DataFrame, pd.DataFrame]:
+    #     """
+    #     Splitting df.
+    #
+    #     Returns:
+    #         A tuple of X_test & y_test
+    #     """
+    #     self._split()
+    #     return self._X_test, self._y_test
 
 
 if __name__ == '__main__':

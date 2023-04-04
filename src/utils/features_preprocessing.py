@@ -52,12 +52,13 @@ class _CustomTfidf:
     tfidf = TfidfVectorizer()#max_df=max_df)#, min_df=min_df)#, ngram_range=ngram_range)#,
                             #use_idf=use_idf, smooth_idf=smooth_idf, sublinear_tf=sublinear_tf)
 
-    """ReadPrepare & Split parts"""
-    path = "../../../../DB's/Toxic_database/tox_train.csv"
-    df = ReadPrepare(path, 1200).data_process()
-    print(df.columns)
-    # print(df["comment_text"])
-    print(df["target"])
+    # """ReadPrepare & Split parts"""
+    # # path = "../../../../DB's/Toxic_database/tox_train.csv"
+    # path="D:/web/tox_train.csv"
+    # df = ReadPrepare(path, 1200).data_process()
+    # print(df.columns)
+    # # print(df["comment_text"])
+    # print(df["target"])
     #
     #
     # X_train, X_test, y_train, y_test=train_test_split(df["comment_text"],df["target"],test_size=0.33,random_state=42)
@@ -77,8 +78,8 @@ class _CustomTfidf:
     #
     # # Print classification report
     # print(classification_report(y_test, y_pred))
-    #
-    # # Make predictions and calculate F1 score
+
+    # Make predictions and calculate F1 score
     #
     # y_pred = model.predict(X_test)
     # score = f1_score(y_test, y_pred)
