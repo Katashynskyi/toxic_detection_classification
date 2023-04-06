@@ -13,7 +13,8 @@ from sklearn.svm import LinearSVC
 from sklearn.metrics import f1_score
 from sklearn.metrics import classification_report, confusion_matrix
 
-class _CustomTfidf:
+
+class CustomTfidf:
     """
     Creates customized TF-IDF vectorizer.
 
@@ -30,64 +31,19 @@ class _CustomTfidf:
 
     Returns:
     --------
-    tfidf in file.pickle
+    .fit_transform() : csr_matrix
+            The sparse matrix of TF-IDF features.
+    or
+
+    .save() : tfidf.pickle
     """
 
     def __init__(self,
                  max_df: float = 0.8,
                  min_df: float = 10,
                  ngram_range: tuple = (1, 1)):
-
-        self._tfidf = TfidfVectorizer(input=None, ngram_range=ngram_range, max_df=max_df, min_df=min_df)
+        self._tfidf = TfidfVectorizer(ngram_range=ngram_range, max_df=max_df, min_df=min_df)
         self._dump = None
-
-
-    #Set up Optuna study and run optimization
-    study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=100)
-
-    #Get best hyperparameters
-    best_params = study.best_params_
-    print(f"Best params: {best_params}")
-
-    # Vectorize data using best hyperparameters
-    tfidf = TfidfVectorizer(**best_params)
-    X_tfidf = tfidf.fit_transform(X)
-
-    def fit(self, x: pd.DataFrame):
-        """
-        Fits the TF-IDF vectorizer to the input data.
-
-        Parameters:
-        -----------
-        x : pandas DataFrame
-            The input data to fit the TF-IDF vectorizer to.
-
-        Returns:
-        --------
-        self : object
-            Returns the instance of the class.
-        """
-        self._tfidf.fit(x)
-        return self
-
-    def transform(self, x: pd.DataFrame, y=None):
-        """
-        Transforms the input data into a sparse matrix of TF-IDF features.
-
-        Parameters:
-        -----------
-        x : pandas DataFrame
-            The input data to transform into a TF-IDF sparse matrix.
-        y : ignored
-
-        Returns:
-        --------
-        csr_matrix
-            The sparse matrix of TF-IDF features.
-        """
-        self._dump = self._tfidf.transform(x)
-        return self._dump
 
     def fit_transform(self, x: pd.DataFrame, y=None):
         """
@@ -106,33 +62,23 @@ class _CustomTfidf:
             The sparse matrix of TF-IDF features.
         """
         self._dump = self._tfidf.fit_transform(x)
-        # with open("../../data/tfidf.pickle", 'wb') as file:
-        #     pickle.dump(self.tfidf, file)
         return self._dump
 
-    # TODO: change return?
     def save(self):
         """
         Saves the fitted TF-IDF vectorizer to a pickle file.
 
-        Parameters:
-        -----------
-        None
-
         Returns:
         --------
-        None
+        tfidf.pickle
         """
         with open("../../data/tfidf.pickle", 'wb') as file:
             pickle.dump(self._dump, file)
 
-    def load(self):
+    @staticmethod
+    def load():
         """
         Loads a fitted TF-IDF vectorizer from a pickle file.
-
-        Parameters:
-        -----------
-        None
 
         Returns:
         --------
@@ -180,8 +126,7 @@ class _AddingFeatures:
 
     def __init__(self,
                  scaler=MinMaxScaler(),
-                 indirect_f: list = indirect_f_list
-                 ):
+                 indirect_f: list = indirect_f_list):
         self._scaler = scaler
         self._indirect_f = indirect_f
 
@@ -219,43 +164,8 @@ class _AddingFeatures:
         input_df.loc[:, 'punct_percent'] = input_df.loc[:, 'count_punctuations'] * 100 / input_df[
             'count_word']
         return input_df[self._indirect_f]
-
-    def fit(self, x):
-        """
-        Normalize Fits the indirect features to the input data.
-
-        Parameters:
-        -----------
-        x : pandas DataFrame
-            The input data to fit the indirect features to.
-
-        Returns:
-        --------
-        self : object
-        """
-        new_features = self.add(x)
-        self._scaler.fit(new_features)
-        return self
-
-    def transform(self, x, y=None):
-        """
-        Normalize (scale) indirect features.
-
-        Parameters:
-        -----------
-        x : pandas DataFrame
-            The input data.
-        y : ignored
-
-        Returns:
-        --------
-        Normalized (scaled) csr_matrix
-        """
-        new_features = self.add(x)
-        scaled_x = self._scaler.transform(new_features)
-        return csr_matrix(scaled_x)
-
-    def fit_transform(self, x, y=None):
+#Todo : i'm left here
+    def normalize(self, X, y=None):
         """
         Normalize (scale) indirect features
 
@@ -268,11 +178,11 @@ class _AddingFeatures:
         --------
         Normalized (scaled) csr_matrix
         """
-        new_features = self.add(x)
+        new_features = self.add(X)
         scaled_x = self._scaler.fit_transform(new_features)
         return csr_matrix(scaled_x)
-
-    def stack(self, tfidf, indirect_features):
+# Todo :and here
+    def stack(self,tfidf, indirect_features):
         """
         Stacking TF-IDF features & indirect features.
 
@@ -287,6 +197,7 @@ class _AddingFeatures:
         Extracted features : pd.DataFrame
 
         """
+        self.normalize(indirect_features)
         return hstack((tfidf, indirect_features))
 
 
@@ -307,7 +218,7 @@ class Preprocessor:
     """
 
     def __init__(self, n_samples=100,
-                 vectorizer: str = _CustomTfidf()):
+                 vectorizer: str = CustomTfidf()):
         self.n_samples = n_samples
         self.vectorizer = vectorizer
         self.adding_indirect_f = _AddingFeatures()
@@ -321,13 +232,13 @@ class Preprocessor:
         tfidf_X = self.vectorizer.transform(x)
         indirect_sparse_f = self.adding_indirect_f.transform(x)
         return hstack((tfidf_X, indirect_sparse_f))
-
+#todo : and here
     def fit_transform(self, x, y=None):
         """TFIDF part"""
         tfidf_X = self.vectorizer.fit_transform(x)  # pd.DataFrame ->
         # tfidf_X.save()  # -> tfidf.pickle
         """Adding features part"""
-        indirect_sparse_f = self.adding_indirect_f.fit_transform(x)
+        indirect_sparse_f = self.adding_indirect_f.add(tfidf_X)
         """Stack"""
         return hstack((tfidf_X, indirect_sparse_f))  # -> csr_matrix
 
@@ -335,7 +246,7 @@ class Preprocessor:
 if __name__ == '__main__':
     from src.utils.utils import ReadPrepare, Split
     from sklearn.pipeline import make_pipeline
-    from sklearn.svm import SVC,LinearSVC
+    from sklearn.svm import SVC, LinearSVC
     from sklearn.metrics import classification_report, confusion_matrix
 
     path = "../../../../DB's/Toxic_database/tox_train.csv"
@@ -343,11 +254,11 @@ if __name__ == '__main__':
     """ReadPrepare & Split parts"""
     df = ReadPrepare(path, 1200).data_process()
     train_X, train_y = Split(df=df).get_train_data()
-    a=_CustomTfidf().fit_transform(train_X)
+    a = CustomTfidf().fit_transform(train_X)
 
     """Baseline model"""
     model = LinearSVC(random_state=42, tol=1e-5)
-# -----------------------------------------
+    # -----------------------------------------
 
     from optuna.integration import OptunaSearchCV
     from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix, f1_score
@@ -355,23 +266,23 @@ if __name__ == '__main__':
     from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
     from sklearn.model_selection import cross_val_score
 
-
     svc_pipeline = make_pipeline(Preprocessor(), SVC(random_state=42, kernel='linear', degree=1))
     """init hyper-param"""
     param_distributions = {"preprocessor__??": optuna.distributions.FloatDistribution(1e-10, 1e10)}  # ,
     # param_distributions = {"svc__C": optuna.distributions.FloatDistribution(1e-10, 1e10)}  # ,
     # "svc__gamma":optuna.distributions.FloatDistribution(1e-4,1)}
     pipeline = OptunaSearchCV(svc_pipeline, param_distributions,
-                                   cv=StratifiedKFold(n_splits=3, shuffle=True),
-                                   n_trials=1, random_state=42, verbose=0,scoring=f1_score)
+                              cv=StratifiedKFold(n_splits=3, shuffle=True),
+                              n_trials=1, random_state=42, verbose=0, scoring=f1_score)
 
     """Train & predict"""
     pipeline.fit(train_X, train_y)
     pred_y = pipeline.predict(train_X)
 
-# -------------------------------------------
+    # -------------------------------------------
     """Fit transform"""
-    pl = make_pipeline(Preprocessor(), model) #  <class 'scipy.sparse._csr.csr_matrix'> ### (1071, 621) ###(0, 384)	0.14612288377660107
+    pl = make_pipeline(Preprocessor(),
+                       model)  # <class 'scipy.sparse._csr.csr_matrix'> ### (1071, 621) ###(0, 384)	0.14612288377660107
     pl.fit(train_X, train_y)
     pred_y = pl.predict(train_X)
     "metrics"
