@@ -89,7 +89,7 @@ class CustomTfidf:
             return pickle.load(file)
 
 
-class _AddingFeatures:
+class AddingFeatures:
     """
     Adding indirect features to "comment_text" column and compile it with tf-idf features.
 
@@ -164,7 +164,8 @@ class _AddingFeatures:
         input_df.loc[:, 'punct_percent'] = input_df.loc[:, 'count_punctuations'] * 100 / input_df[
             'count_word']
         return input_df[self._indirect_f]
-#Todo : i'm left here
+
+    # Todo : should I scale tf-idf features together with additional features?
     def normalize(self, X, y=None):
         """
         Normalize (scale) indirect features
@@ -181,8 +182,9 @@ class _AddingFeatures:
         new_features = self.add(X)
         scaled_x = self._scaler.fit_transform(new_features)
         return csr_matrix(scaled_x)
-# Todo :and here
-    def stack(self,tfidf, indirect_features):
+
+    # Todo :and here
+    def stack(self, tfidf, indirect_features):
         """
         Stacking TF-IDF features & indirect features.
 
@@ -197,7 +199,7 @@ class _AddingFeatures:
         Extracted features : pd.DataFrame
 
         """
-        self.normalize(indirect_features)
+        indirect_features=self.normalize(indirect_features)
         return hstack((tfidf, indirect_features))
 
 
@@ -221,7 +223,7 @@ class Preprocessor:
                  vectorizer: str = CustomTfidf()):
         self.n_samples = n_samples
         self.vectorizer = vectorizer
-        self.adding_indirect_f = _AddingFeatures()
+        self.adding_indirect_f = AddingFeatures()
 
     def fit(self, x, y=None):
         self.vectorizer.fit(x)
@@ -232,7 +234,8 @@ class Preprocessor:
         tfidf_X = self.vectorizer.transform(x)
         indirect_sparse_f = self.adding_indirect_f.transform(x)
         return hstack((tfidf_X, indirect_sparse_f))
-#todo : and here
+
+    # todo : and here
     def fit_transform(self, x, y=None):
         """TFIDF part"""
         tfidf_X = self.vectorizer.fit_transform(x)  # pd.DataFrame ->
