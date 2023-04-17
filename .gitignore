@@ -1,7 +1,7 @@
 # morea_MY
 run_train.sh
 run_train.py
-test.py
+Testing/optuna_6_variants.py
 .ipynb_checkpoints/
 mlruns/
 .idea/

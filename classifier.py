@@ -1,14 +1,11 @@
+import warnings
+import os
+import numpy as np
+import pandas as pd
 import argparse
-import pickle
 import mlflow.sklearn
 from mlflow import log_metric, log_param, log_artifacts
-import pandas as pd
-import numpy as np
-import os
-import warnings
 from sklearn.pipeline import make_pipeline
-from src.utils.features_preprocessing import Preprocessor
-from src.utils.utils import ReadPrepare, Split
 from sklearn.svm import SVC
 from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix
 import logging as logger
@@ -17,6 +14,8 @@ import optuna
 from optuna.integration import OptunaSearchCV
 from xgboost import XGBClassifier
 import lightgbm as lgb
+from src.utils.features_preprocessing import CustomTfidf, Preprocessor
+from src.utils.utils import ReadPrepare, Split
 
 warnings.filterwarnings('ignore')
 logger.getLogger().setLevel(logger.INFO)
@@ -39,23 +38,36 @@ class ClassifierModel:
         self.input_data = input_data
         self.n_samples = n_samples
         self.max_feat = tfidf_max_feat
-        self.classifier_type = classifier_type
         self.vectorizer = vectorizer
+        self.classifier_type = classifier_type
         self.pipeline = pipeline
         self.x_train = self.y_train = self.x_test = self.y_test = None
 
     def __training_setup(self):
-        """ReadPrepare & Split parts"""
+        # ReadPrepare
         df = ReadPrepare(self.input_data, self.n_samples).data_process()
+
+        # Split
         self.train_X, self.train_y = Split(df=df).get_train_data()
         self.test_X, self.test_y = Split(df=df).get_test_data()
 
-        """Vectorizer"""
-        pass
+        # Vectorizer
+        if self.vectorizer == 'tfidf':
+            tfidf = CustomTfidf(max_feat=self.max_feat, max_df=0.8,
+                                                 min_df=15, ngram_range=(1, 1)).fit_transform(self.train_X)
+            self.vectorizer=Preprocessor(vectorizer=tfidf)
 
-        """Model pipeline"""
+        elif self.vectorizer=='spacy':
+            pass
+        else:
+            raise ValueError("incorrect vectorizer, please use tfidf or spacy")
+
+        # Model pipeline
         if self.classifier_type == 'basemodel':
+
+            svc_pipeline=make_pipeline(self.vectorizer(),)
             svc_pipeline = make_pipeline(Preprocessor(), SVC(random_state=RANDOM_STATE, kernel='linear', degree=1))
+
             """init hyper-param"""
             param_distributions = {"svc__C": optuna.distributions.FloatDistribution(1e-10, 1e10)}  # ,
             # "svc__gamma":optuna.distributions.FloatDistribution(1e-4,1)}
@@ -68,6 +80,7 @@ class ClassifierModel:
             #                                                         max_depth=5,min_child_weight=11, n_estimators=1000,
             #                                                         n_jobs=4,objective='binary:multiclass',
             #                                                         random_state=RANDOM_STATE, subsample=0.8))
+
             """init hyper-param"""
             param_distributions = {}
             # param_distributions = {
@@ -181,17 +194,17 @@ if __name__ == '__main__':
     parser.add_argument('--type_of_run',
                         help='"train" of "inference"?',
                         default='train')
-    parser.add_argument('--classifier_type',
-                        help='Choose "basemodel", "xgboost" or "lightgbm"',
-                        default='lgbm')
     parser.add_argument('--vectorizer',
                         help='Choose "tfidf" or "spacy"',
                         default='tfidf')
+    parser.add_argument('--classifier_type',
+                        help='Choose "basemodel", "xgboost" or "lightgbm"',
+                        default='lgbm')
     args = parser.parse_args()
 
     if args.type_of_run == 'train':
         classifier = ClassifierModel(input_data=args.path, n_samples=args.n_samples,
-                                     classifier_type=args.classifier_type,vectorizer=args.vectorizer)
+                                     vectorizer=args.vectorizer, classifier_type=args.classifier_type)
         classifier.train()
 
     # if args.type_of_run=='inference':

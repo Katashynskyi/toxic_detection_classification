@@ -100,17 +100,17 @@ class Split:
         """
         self._split()
         # return self._X_train, self._y_train
-        return self._split()
+        return self._X_train,self._y_train
 
-    # def get_test_data(self):# -> tuple[pd.DataFrame, pd.DataFrame]:
-    #     """
-    #     Splitting df.
-    #
-    #     Returns:
-    #         A tuple of X_test & y_test
-    #     """
-    #     self._split()
-    #     return self._X_test, self._y_test
+    def get_test_data(self):# -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Splitting df.
+
+        Returns:
+            A tuple of X_test & y_test
+        """
+        self._split()
+        return self._X_test, self._y_test
 
 
 if __name__ == '__main__':
@@ -119,29 +119,15 @@ if __name__ == '__main__':
     from sklearn.metrics import classification_report, confusion_matrix
     from features_preprocessing import Preprocessor
 
+    # Path
     path = "../../../../DB's/Toxic_database/tox_train.csv"
+    # ReadPrepare test
     rp = ReadPrepare(path=path, n_samples=-1).data_process()  # csv -> pd.DataFrame
-    """Problem"""
-    # pd.set_option('display.max_columns', 2)
-    # pd.set_option('display.max_rows', 500)
-    # rp=rp.sort_values(by='comment_text')['comment_text']
-    # print(rp.tail(200))
-    '-------------------'
+    # Split test
     splitter = Split(df=rp)
     train_X, train_y = splitter.get_train_data()  # -> pd.DataFrame
     test_X, test_y = splitter.get_test_data()  # -> pd.DataFrame
-    print(f"train_X {train_X.tail()}")
-    print(f"train_y {train_y.tail()}")
-    print(f"test_X {test_X.tail()}")
-    print(f"test_y {test_y.tail()}")
-
-    """Baseline model"""
-    model = LinearSVC(random_state=42, tol=1e-5)
-    """Fit transform"""
-    pl = make_pipeline(Preprocessor(), model)
-    pl.fit(train_X, train_y)
-    pred_y = pl.predict(train_X)
-    "metrics"
-    print(pd.DataFrame(classification_report(y_true=train_y, y_pred=pred_y, output_dict=1,
-                                             target_names=['non-toxic', 'toxic'])).transpose())
-    print(confusion_matrix(y_true=train_y, y_pred=pred_y))
+    print(f"train_X:\n{train_X.tail(1)}")
+    print(f"train_y:\n{train_y.tail(1)}")
+    print(f"test_X:\n{test_X.tail(1)}")
+    print(f"test_y:\n{test_y.tail(1)}")

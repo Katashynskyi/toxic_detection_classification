@@ -11,7 +11,7 @@ class TfidfTuning:
     def best_tfidf_params(trial):
         # ReadPrepare & Split parts
         # path = "D:/web/tox_train.csv" #  work path
-        path = "../../DB's/Toxic_database/tox_train.csv"  # home path
+        path = "../../../DB's/Toxic_database/tox_train.csv"  # home path
         df = ReadPrepare(path, n_samples=10000).data_process()
         X_train, X_test, y_train, y_test = train_test_split(df["comment_text"], df["target_class"],
                                                             test_size=0.33, random_state=42,
