@@ -6,13 +6,6 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.feature_extraction.text import TfidfVectorizer
 from scipy.sparse import csr_matrix, hstack
 import pickle
-from sklearn.model_selection import train_test_split
-import optuna
-from src.utils.utils import ReadPrepare, Split
-from sklearn.svm import LinearSVC
-from sklearn.metrics import f1_score
-from sklearn.metrics import classification_report, confusion_matrix
-
 
 class CustomTfidf:
     """
@@ -47,6 +40,41 @@ class CustomTfidf:
                  norm='l2'):
         self._tfidf = TfidfVectorizer(ngram_range=ngram_range, max_df=max_df, min_df=min_df,norm=norm,max_features=max_feat)
         self._dump = None
+
+    def fit(self,x,y=None):
+        """
+        Fits TF-IDF vectorizer
+
+        Parameters:
+        ----------
+        x : pandas DataFrame
+            The input data to fit the TF-IDF vectorizer.
+        y : ignored
+
+        Returns:
+        --------
+        self
+        """
+        self._dump = self._tfidf.fit(x)
+        return self
+
+    def transform(self,x,y=None):
+        """
+         Transform into a TF-IDF sparse matrix.
+
+         Parameters:
+        ----------
+        x : pandas DataFrame
+            The input data to fit the TF-IDF vectorizer.
+        y : ignored
+
+        Returns:
+        --------
+        csr_matrix
+            The sparse matrix of TF-IDF features.
+        """
+        self._dump = self._tfidf.transform(x)
+        return self._dump
 
     def fit_transform(self, x: pd.DataFrame, y=None):
         """
@@ -201,53 +229,95 @@ class Preprocessor:
     Hardcoded meta-class of TFIDF features
     Preprocessor to transform raw text data into a sparse matrix of features.
 
-    Parameters:
-    -----------
-    n_samples : int
-
-
     Returns:
     --------
     df : csr_matrix
         TF-IDF embedding combined with additional features
     """
 
-    def __init__(self, n_samples=100,
-                 vectorizer=CustomTfidf()):
-        self.n_samples = n_samples
-        self.vectorizer = vectorizer
-        self.adding_indirect_f = AddingFeatures()
+    def __init__(self,
+                 max_df: float = 0.8,
+                 min_df: float = 10,
+                 ngram_range: tuple = (1, 1),
+                 max_feat=None,
+                 norm='l2',
+                 scaler=MinMaxScaler()):
+        self.scaler=scaler
+        self._tfidf = TfidfVectorizer(max_df=max_df, min_df=min_df,ngram_range=ngram_range,max_features=max_feat,norm=norm)
 
-    # def fit(self, x, y=None):
-    #     self.vectorizer.fit(x)
-    #     self.adding_indirect_f.fit(x)
-    #     return self
+    def fit(self, x, y=None):
+        """
+        Fits TF-IDF vectorizer
 
-    # def transform(self, x, y=None):
-    #     tfidf_X = self.vectorizer.transform(x)
-    #     indirect_sparse_f = self.adding_indirect_f.transform(x)
-    #     return hstack((tfidf_X, indirect_sparse_f))
+        Parameters:
+        ----------
+        x : pandas DataFrame
+            The input data to fit the TF-IDF vectorizer.
+        y : ignored
 
-    def fit_transform(self, x, y=None):
-        # path
-        # path = "../../../../DB's/Toxic_database/tox_train.csv"
-        #
-        # # ReadPrepare test
-        # df = ReadPrepare(path, 1200).data_process()
-        #
-        # # Split test
-        # train_X, train_y = Split(df=df).get_train_data()
+        Returns:
+        --------
+        self
+        """
+        self._tfidf.fit(x)
+        return self
 
-        # CustomTfidf
-        tfidf = CustomTfidf().fit_transform(train_X)
+    def transform(self, x, y=None):
+        """
+         Transform into a TF-IDF sparse matrix.
+
+         Parameters:
+        ----------
+        x : pandas DataFrame
+            The input data to fit the TF-IDF vectorizer.
+        y : ignored
+
+        Returns:
+        --------
+        csr_matrix
+            The sparse matrix of TF-IDF features.
+        """
+        tfidf = self._tfidf.transform(x)
 
         # AddingFeatures create
-        additional_features = AddingFeatures().create(input_df=train_X)
+        additional_features = AddingFeatures().create(input_df=x)
         # print(additional_features)
 
         # AddingFeatures normalize
-        normalize = AddingFeatures().normalize(additional_features)
+        normalize = AddingFeatures(self.scaler).normalize(additional_features)
 
+        # AddingFeatures stack
+        stack = AddingFeatures().stack(tfidf, normalize)
+        return stack  # -> csr_matrix
+
+
+    def fit_transform(self, x, y=None):
+        """
+        Fits & transfrorms the TF-IDF vectorizer, creates indirect features, stack them together with TF-IDF embeddings & normalize them.
+
+        Parameters:
+        -----------
+        x : pandas DataFrame
+            The input data to fit the TF-IDF vectorizer to and transform into a TF-IDF
+            sparse matrix.
+        y : ignored
+
+        Returns:
+        --------
+        csr_matrix
+            The sparse matrix of TF-IDF features.
+        """
+
+        # CustomTfidf
+        tfidf=self._tfidf.fit_transform(x)
+
+        # AddingFeatures create
+        additional_features = AddingFeatures().create(input_df=x)
+        print(additional_features)
+
+        # AddingFeatures normalize
+        normalize = AddingFeatures().normalize(additional_features)
+        print(normalize)
         # AddingFeatures stack
         stack = AddingFeatures().stack(tfidf, normalize)
         return stack # -> csr_matrix
@@ -264,20 +334,22 @@ if __name__ == '__main__':
 
     # Split test
     train_X, train_y = Split(df=df).get_train_data()
-    #
-    # # CustomTfidf test
-    # tfidf = CustomTfidf().fit_transform(train_X)
-    #
-    # # AddingFeatures create test
-    # additional_features = AddingFeatures().create(input_df=train_X)
-    # # print(additional_features)
-    #
-    # # AddingFeatures normalize test
-    # normalize = AddingFeatures().normalize(additional_features)
-    #
-    # # AddingFeatures stack test
-    # stack = AddingFeatures().stack(tfidf, normalize)
 
+    # CustomTfidf test
+    tfidf = CustomTfidf().fit_transform(train_X)
+
+    # AddingFeatures create test
+    additional_features = AddingFeatures().create(input_df=train_X)
+    print(f"additional_features: {type(additional_features)}")
+
+    # AddingFeatures normalize test
+    normalize = AddingFeatures().normalize(additional_features)
+    print(f"normalize: {type(normalize)}")
+
+    # AddingFeatures stack test
+    stack = AddingFeatures().stack(tfidf, normalize)
+    print(f"stack: {type(stack)}")
     # Preprocessor test
-    p = Preprocessor().fit_transform(train_X)
-    print(p)
+    # p = Preprocessor().fit_transform(train_X)
+    # p = Preprocessor().fit(train_X).transform(train_X)
+    # print(p)
