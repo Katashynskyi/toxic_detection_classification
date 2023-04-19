@@ -51,16 +51,6 @@ class ClassifierModel:
         self.train_X, self.train_y = Split(df=df).get_train_data()
         self.test_X, self.test_y = Split(df=df).get_test_data()
 
-        # Vectorizer
-        if self.vectorizer == 'tfidf':
-            tfidf = CustomTfidf(max_feat=self.max_feat, max_df=0.8,
-                                                 min_df=15, ngram_range=(1, 1)).fit_transform(self.train_X)
-            self.vectorizer=Preprocessor(vectorizer=tfidf)
-
-        elif self.vectorizer=='spacy':
-            pass
-        else:
-            raise ValueError("incorrect vectorizer, please use tfidf or spacy")
 
         # Model pipeline
         if self.classifier_type == 'basemodel':
@@ -69,8 +59,8 @@ class ClassifierModel:
             svc_pipeline = make_pipeline(Preprocessor(), SVC(random_state=RANDOM_STATE, kernel='linear', degree=1))
 
             """init hyper-param"""
-            param_distributions = {"svc__C": optuna.distributions.FloatDistribution(1e-10, 1e10)}  # ,
-            # "svc__gamma":optuna.distributions.FloatDistribution(1e-4,1)}
+            param_distributions = {"svc__C": optuna.distributions.FloatDistribution(1e-10, 1e10)} #,
+             # "svc__gamma":optuna.distributions.FloatDistribution(1e-4,1)}
             self.pipeline = OptunaSearchCV(svc_pipeline, param_distributions,
                                            cv=StratifiedKFold(n_splits=3, shuffle=True),
                                            n_trials=1, random_state=42, verbose=0,scoring=None)

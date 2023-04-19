@@ -350,6 +350,6 @@ if __name__ == '__main__':
     stack = AddingFeatures().stack(tfidf, normalize)
     print(f"stack: {type(stack)}")
     # Preprocessor test
-    # p = Preprocessor().fit_transform(train_X)
-    # p = Preprocessor().fit(train_X).transform(train_X)
-    # print(p)
+    p = Preprocessor().fit_transform(train_X)
+    p = Preprocessor().fit(train_X).transform(train_X)
+    print(p)
