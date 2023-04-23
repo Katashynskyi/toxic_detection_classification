@@ -31,13 +31,13 @@ class ClassifierModel:
     def __init__(self,
                  input_data,
                  n_samples=800,
-                 tfidf_max_feat=500,
+                 n_trials=5,
                  classifier_type: str = 'basemodel',
                  vectorizer: str = 'tfidf',
                  pipeline=None):
         self.input_data = input_data
         self.n_samples = n_samples
-        self.max_feat = tfidf_max_feat
+        self.n_trials = n_trials
         self.vectorizer = vectorizer
         self.classifier_type = classifier_type
         self.pipeline = pipeline
@@ -51,46 +51,38 @@ class ClassifierModel:
         self.train_X, self.train_y = Split(df=df).get_train_data()
         self.test_X, self.test_y = Split(df=df).get_test_data()
 
-
         # Model pipeline
         if self.classifier_type == 'basemodel':
-
-            svc_pipeline=make_pipeline(self.vectorizer(),)
-            svc_pipeline = make_pipeline(Preprocessor(), SVC(random_state=RANDOM_STATE, kernel='linear', degree=1))
+            svc_pipeline = make_pipeline(Preprocessor(vectorizer_type=self.vectorizer),
+                                         SVC(random_state=RANDOM_STATE, kernel='linear', degree=1))
 
             """init hyper-param"""
-            param_distributions = {"svc__C": optuna.distributions.FloatDistribution(1e-10, 1e10)} #,
-             # "svc__gamma":optuna.distributions.FloatDistribution(1e-4,1)}
+            param_distributions = {"svc__C": optuna.distributions.FloatDistribution(1e-10, 1e10)}  # ,
+            # "svc__gamma":optuna.distributions.FloatDistribution(1e-4,1)}
+
+            """optimization"""
             self.pipeline = OptunaSearchCV(svc_pipeline, param_distributions,
                                            cv=StratifiedKFold(n_splits=3, shuffle=True),
-                                           n_trials=1, random_state=42, verbose=0,scoring=None)
+                                           n_trials=self.n_trials, random_state=42, verbose=0, scoring=None)
 
         elif self.classifier_type == "xgboost":
-            xgb_pipeline = make_pipeline(Preprocessor(), XGBClassifier())  # colsample_bytree=0.7, learning_rate=0.05,
-            #                                                         max_depth=5,min_child_weight=11, n_estimators=1000,
-            #                                                         n_jobs=4,objective='binary:multiclass',
-            #                                                         random_state=RANDOM_STATE, subsample=0.8))
+            xgb_pipeline = make_pipeline(Preprocessor(vectorizer_type=self.vectorizer),
+                                         XGBClassifier(learning_rate=0.05,random_state=RANDOM_STATE,missing=-999))
 
             """init hyper-param"""
-            param_distributions = {}
-            # param_distributions = {
-            #     'clf__njobs': [4],
-            #     'clf__objective': ['multiclass'],
-            #     'clf__learning_rate': [0.05],
-            #     'clf__max_depth': [6, 12, 18],
-            #     'clf__min_child_weight': [11, 13, 15],
-            #     'clf__subsample': [0.7, 0.8],
-            #     'clf__colsample_bytree': [0.6, 0.7],
-            #     'clf__n_estimators': [5, 50, 100, 1000],
-            #     'clf__missing': [-999],
-            #     'clf__random_state': [RANDOM_STATE]
-            # }
+            param_distributions = {
+                'xgbclassifier__max_depth': optuna.distributions.CategoricalDistribution([6, 12, 18]),
+                'xgbclassifier__min_child_weight':optuna.distributions.CategoricalDistribution([11,13,15]),
+                'xgbclassifier__subsample':optuna.distributions.CategoricalDistribution([0.7, 0.8]),
+                'xgbclassifier__n_estimators': optuna.distributions.CategoricalDistribution([5, 50, 100, 1000])}
+
+            """optimization"""
             self.pipeline = OptunaSearchCV(xgb_pipeline, param_distributions,
                                            cv=StratifiedKFold(n_splits=3, shuffle=True),
-                                           n_trials=1, random_state=42, verbose=0)
+                                           n_trials=self.n_trials, random_state=42, verbose=0, scoring=None)
 
         elif self.classifier_type == 'lgbm':
-            lgbm_pipeline = make_pipeline(Preprocessor(), lgb.LGBMClassifier())
+            lgbm_pipeline = make_pipeline(Preprocessor(vectorizer_type=self.vectorizer), lgb.LGBMClassifier())
             """init hyper-param"""
             param_distributions = {}
             # param_distributions = {'num_leaves': 5,
@@ -101,15 +93,18 @@ class ClassifierModel:
             #           'random_state': RANDOM_STATE}
             self.pipeline = OptunaSearchCV(lgbm_pipeline, param_distributions,
                                            cv=StratifiedKFold(n_splits=3, shuffle=True),
-                                           n_trials=1, random_state=42, verbose=0)
+                                           n_trials=self.n_trials, random_state=42, verbose=0, scoring=None)
 
-    def train(self, run_version=None):
+    def train(self):
         """... and one method to rule them all. (c)"""
         self.__training_setup()
         train_X, train_y = self.train_X, self.train_y
+
         """MLFlow Config"""
         logger.info("Setting up MLFlow Config")
+
         mlflow.set_experiment('Toxicity_classifier_model')
+
         """Search for previous runs and get run_id if present"""
         # logger.info("Searching for previous runs for given model type")
         # df_runs = mlflow.search_runs(filter_string="tags.Model = '{0}'".format('XGB'))
@@ -120,48 +115,83 @@ class ClassifierModel:
         # run_version = len(df_runs) + 1
 
         """Start the MLFlow Run and train the model"""
-        with mlflow.start_run(run_id=None):
+        with mlflow.start_run():
             """Train & predict"""
             self.pipeline.fit(train_X, train_y)
             logger.info("train is done")
             pred_y = self.pipeline.predict(train_X)
             # self.pipeline.save()
-            """classification report on train set"""
+
+            """classification report of train set"""
             df = pd.DataFrame(classification_report(y_true=train_y, y_pred=pred_y, output_dict=1,
                                                     target_names=['non-toxic', 'toxic'])).transpose()
-            # logger.info(f"\n\nTrain metric.")
-            # print(df)
 
-            """cross_val_score(nested_CV) on train set"""
+            """cross_val_score(nested_CV) of train set"""
             # kf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
             # score=cross_val_score(self.pipeline,train_X,train_y,cv=StratifiedKFold(n_splits=3, shuffle=True))
             # logger.info(f"cross_val_score : {score.mean()}")
 
-            """Log model metrics"""
+            """Show train metrics"""
             logger.info(
-                f"\n {pd.DataFrame(classification_report(train_y, pred_y, output_dict=1, target_names=['non-toxic', 'toxic'])).transpose()}")
-            logger.info(f"Area Under the Curve score: {round(roc_auc_score(train_y, pred_y), 2)}")
+                f"\n{pd.DataFrame(classification_report(train_y, pred_y, output_dict=1, target_names=['non-toxic', 'toxic'])).transpose()}")
+            logger.info(f"\n    Area Under the Curve score: {round(roc_auc_score(train_y, pred_y), 2)}")
             logger.info(f"\n [true negatives  false positives]\n [false negatives  true positives] \
                         \n {confusion_matrix(train_y, pred_y)}")
 
             # logger.info(" Logging results into file_log.log")
             logger.info("Training Complete. Logging results into MLFlow")
-            mlflow.log_metric("macro_f1", np.round(df.loc["macro avg", "f1-score"], 5))
-            mlflow.log_metric("weighted_f1", np.round(df.loc["weighted avg", "f1-score"], 5))
-            df = df.reset_index()
-            df.columns = ['category', 'precision', 'recall', 'f1-score', 'support']
+
+            """Log train metrics"""
+            # Precision
+            mlflow.log_metric("Precision", np.round(df.loc["toxic", "precision"], 2))
+
+            # Recall
+            mlflow.log_metric("Recall", np.round(df.loc["toxic", "recall"], 2))
+
+            # macro_f1
+            mlflow.log_metric("Macro_f1", np.round(df.loc["macro avg", "f1-score"], 2))
+
+            # weighted_f1
+            mlflow.log_metric("Weighted_f1", np.round(df.loc["weighted avg", "f1-score"], 2))
+
+            # Best Score
+            mlflow.log_metric("Best Score", "%.2f " % self.pipeline.best_score_)
+
+            # AUC
+            mlflow.log_metric("AUC", round(roc_auc_score(train_y, pred_y), 2))
+
+            # Confusion matrix
+            conf_matrix = confusion_matrix(train_y, pred_y)
+            mlflow.log_metric("TP", conf_matrix[0][0])
+            mlflow.log_metric("TN", conf_matrix[1][1])
+            mlflow.log_metric("FP", conf_matrix[0][1])
+            mlflow.log_metric("FN", conf_matrix[1][0])
+
+            # df = df.reset_index()
+            # df.columns = ['category', 'precision', 'recall', 'f1-score', 'support']
             # df.to_csv("toxicity_full_report.csv")
             # mlflow.log_artifact("toxicity_full_report.csv")
-            mlflow.log_param("Best Params", {k: round(v, 2) for k, v in self.pipeline.best_params_.items()})
-            mlflow.log_param("Best Score", "%.2f " % self.pipeline.best_score_)
             # os.remove("toxicity_full_report.csv")
-            """Save model"""
-            mlflow.sklearn.log_model(self.pipeline,
-                                     artifact_path='D:\Programming\Repositories\\toxic_detection_classification\data\model_log',
-                                     serialization_format='pickle')
+
+            """Log hyperparams"""
+            # best of hyperparameter tuning
+            mlflow.log_param("Best Params", {k: round(v, 2) for k, v in self.pipeline.best_params_.items()})
+
+            # number of input comments
+            mlflow.log_param("n_samples", self.n_samples)
+
+            # number of trials of of hyperparameter tuning
+            mlflow.log_param("n_trials", self.n_trials)
+
+            """log model type"""
             mlflow.set_tag("Model", self.classifier_type)
+
+            """Log(save) model"""
+            # mlflow.sklearn.log_model(self.pipeline,
+            #                          artifact_path='D:\Programming\Repositories\\toxic_detection_classification\data\model_log',
+            #                          serialization_format='pickle')
             # mlflow.set_tag("Version", run_version)
-            logger.info("Model Trained and saved into MLFlow artifact location")
+            # logger.info("Model Trained and saved into MLFlow artifact location")
 
             """Test set metrics """
             # predict_y = pipeline.predict(test_X)
@@ -180,7 +210,10 @@ if __name__ == '__main__':
                         default="../../DB's/Toxic_database/tox_train.csv")
     parser.add_argument('--n_samples',
                         help='How many samples to pass?',
-                        default=800)
+                        default=10000)
+    parser.add_argument('--n_trials',
+                        help='How many trials for hyperparameter tuning?',
+                        default=10)
     parser.add_argument('--type_of_run',
                         help='"train" of "inference"?',
                         default='train')
@@ -189,11 +222,10 @@ if __name__ == '__main__':
                         default='tfidf')
     parser.add_argument('--classifier_type',
                         help='Choose "basemodel", "xgboost" or "lightgbm"',
-                        default='lgbm')
+                        default='basemodel')
     args = parser.parse_args()
-
     if args.type_of_run == 'train':
-        classifier = ClassifierModel(input_data=args.path, n_samples=args.n_samples,
+        classifier = ClassifierModel(input_data=args.path, n_samples=args.n_samples,n_trials=args.n_trials,
                                      vectorizer=args.vectorizer, classifier_type=args.classifier_type)
         classifier.train()
 

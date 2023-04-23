@@ -6,6 +6,8 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.feature_extraction.text import TfidfVectorizer
 from scipy.sparse import csr_matrix, hstack
 import pickle
+from sklearn.base import BaseEstimator, TransformerMixin
+
 
 class CustomTfidf:
     """
@@ -38,10 +40,11 @@ class CustomTfidf:
                  ngram_range: tuple = (1, 1),
                  max_feat=None,
                  norm='l2'):
-        self._tfidf = TfidfVectorizer(ngram_range=ngram_range, max_df=max_df, min_df=min_df,norm=norm,max_features=max_feat)
+        self._tfidf = TfidfVectorizer(ngram_range=ngram_range, max_df=max_df, min_df=min_df, norm=norm,
+                                      max_features=max_feat)
         self._dump = None
 
-    def fit(self,x,y=None):
+    def fit(self, x, y=None):
         """
         Fits TF-IDF vectorizer
 
@@ -58,7 +61,7 @@ class CustomTfidf:
         self._dump = self._tfidf.fit(x)
         return self
 
-    def transform(self,x,y=None):
+    def transform(self, x, y=None):
         """
          Transform into a TF-IDF sparse matrix.
 
@@ -223,6 +226,35 @@ class AddingFeatures:
         return hstack((tfidf, norm_indirect_features))
 
 
+# class SpacyVectorTransformer(BaseEstimator, TransformerMixin):
+#     def __init__(self, nlp):
+#         self.nlp = nlp
+#         self.dim = 300
+#
+#     def fit(self, X, y):
+#         return self
+#
+#     def transform(self, X):
+#         return [self.nlp(text).vector for text in X]
+
+
+from sklearn.base import BaseEstimator, TransformerMixin
+
+
+class SpacyVectorTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, nlp, output_dim=300):
+        self.nlp = nlp
+        self.output_dim = output_dim
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        docs = [self.nlp(text) for text in X]
+        outputs = [doc.cats.values() for doc in docs]
+        outputs = [list(x) + [0] * (self.output_dim - len(x)) for x in outputs]
+        return outputs
+
 #  meta-class hardcoded
 class Preprocessor:
     """
@@ -235,15 +267,15 @@ class Preprocessor:
         TF-IDF embedding combined with additional features
     """
 
-    def __init__(self,
-                 max_df: float = 0.8,
-                 min_df: float = 10,
-                 ngram_range: tuple = (1, 1),
-                 max_feat=None,
-                 norm='l2',
-                 scaler=MinMaxScaler()):
-        self.scaler=scaler
-        self._tfidf = TfidfVectorizer(max_df=max_df, min_df=min_df,ngram_range=ngram_range,max_features=max_feat,norm=norm)
+    def __init__(self, vectorizer_type=None, scaler=MinMaxScaler()):
+        if vectorizer_type == 'tfidf':
+            self.vectorizer_type = 'tfidf'
+        elif vectorizer_type == 'spacy':
+            self.vectorizer_type = 'spacy'
+        else:
+            raise ValueError("Invalid embedding type: choose 'tfidf' or 'spacy'")
+        self.scaler = scaler
+        self._tfidf = CustomTfidf()
 
     def fit(self, x, y=None):
         """
@@ -259,7 +291,10 @@ class Preprocessor:
         --------
         self
         """
-        self._tfidf.fit(x)
+        if self.vectorizer_type == 'tfidf':
+            self._tfidf.fit(x)
+        elif self.vectorizer_type == 'spacy':
+            pass
         return self
 
     def transform(self, x, y=None):
@@ -277,19 +312,24 @@ class Preprocessor:
         csr_matrix
             The sparse matrix of TF-IDF features.
         """
-        tfidf = self._tfidf.transform(x)
+        if self.vectorizer_type == 'tfidf':
+            tfidf = self._tfidf.transform(x)
 
-        # AddingFeatures create
-        additional_features = AddingFeatures().create(input_df=x)
-        # print(additional_features)
+            # AddingFeatures create
+            additional_features = AddingFeatures().create(input_df=x)
+            # print(additional_features)
 
-        # AddingFeatures normalize
-        normalize = AddingFeatures(self.scaler).normalize(additional_features)
+            # AddingFeatures normalize
+            normalize = AddingFeatures(self.scaler).normalize(additional_features)
 
-        # AddingFeatures stack
-        stack = AddingFeatures().stack(tfidf, normalize)
-        return stack  # -> csr_matrix
-
+            # AddingFeatures stack
+            stack = AddingFeatures().stack(tfidf, normalize)
+            return stack  # -> csr_matrix
+        elif self.vectorizer_type == 'spacy':
+            import spacy
+            nlp = spacy.load("en_core_web_md")
+            vectorizer_type = SpacyVectorTransformer(nlp=nlp)
+            return vectorizer_type
 
     def fit_transform(self, x, y=None):
         """
@@ -307,20 +347,25 @@ class Preprocessor:
         csr_matrix
             The sparse matrix of TF-IDF features.
         """
+        if self.vectorizer_type == 'tfidf':
+            # CustomTfidf
+            tfidf = self._tfidf.fit_transform(x)
 
-        # CustomTfidf
-        tfidf=self._tfidf.fit_transform(x)
+            # AddingFeatures create
+            additional_features = AddingFeatures().create(input_df=x)
+            # print(additional_features)
 
-        # AddingFeatures create
-        additional_features = AddingFeatures().create(input_df=x)
-        print(additional_features)
-
-        # AddingFeatures normalize
-        normalize = AddingFeatures().normalize(additional_features)
-        print(normalize)
-        # AddingFeatures stack
-        stack = AddingFeatures().stack(tfidf, normalize)
-        return stack # -> csr_matrix
+            # AddingFeatures normalize
+            normalize = AddingFeatures().normalize(additional_features)
+            # print(normalize)
+            # AddingFeatures stack
+            stack = AddingFeatures().stack(tfidf, normalize)
+            return stack  # -> csr_matrix
+        elif self.vectorizer_type == 'spacy':
+            import spacy
+            nlp = spacy.load("en_core_web_md")
+            vectorizer_type = SpacyVectorTransformer(nlp=nlp)
+            return vectorizer_type
 
 
 if __name__ == '__main__':
@@ -335,21 +380,24 @@ if __name__ == '__main__':
     # Split test
     train_X, train_y = Split(df=df).get_train_data()
 
-    # CustomTfidf test
-    tfidf = CustomTfidf().fit_transform(train_X)
+    # # CustomTfidf test
+    # tfidf = CustomTfidf().fit_transform(train_X)
 
-    # AddingFeatures create test
-    additional_features = AddingFeatures().create(input_df=train_X)
-    print(f"additional_features: {type(additional_features)}")
+    # # AddingFeatures create test
+    # additional_features = AddingFeatures().create(input_df=train_X)
+    # print(f"additional_features: {type(additional_features)}")
 
-    # AddingFeatures normalize test
-    normalize = AddingFeatures().normalize(additional_features)
-    print(f"normalize: {type(normalize)}")
+    # # AddingFeatures normalize test
+    # normalize = AddingFeatures().normalize(additional_features)
+    # print(f"normalize: {type(normalize)}")
 
-    # AddingFeatures stack test
-    stack = AddingFeatures().stack(tfidf, normalize)
-    print(f"stack: {type(stack)}")
+    # # AddingFeatures stack test
+    # stack = AddingFeatures().stack(tfidf, normalize)
+    # print(f"stack: {type(stack)}")
+
     # Preprocessor test
-    p = Preprocessor().fit_transform(train_X)
-    p = Preprocessor().fit(train_X).transform(train_X)
-    print(p)
+    p = Preprocessor(vectorizer_type='spacy').fit_transform(train_X)
+    # p = Preprocessor().fit(train_X).transform(train_X)
+    print(p.nlp) #  spacy.lang.en.English object at 0x00000264AEE66AC0
+    print(p.dim) #  300
+    print(p.__class__) #  class '__main__.SpacyVectorTransformer'
