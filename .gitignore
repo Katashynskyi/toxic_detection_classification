@@ -8,6 +8,7 @@ mlruns/
 Task_description.txt
 data/
 src/temp/
+Testing/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
