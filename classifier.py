@@ -16,7 +16,7 @@ from xgboost import XGBClassifier
 import lightgbm as lgb
 from src.utils.features_preprocessing import CustomTfidf, Preprocessor
 from src.utils.utils import ReadPrepare, Split
-
+from src.utils.spacy_vectorizer import SpacyVectorTransformer
 warnings.filterwarnings('ignore')
 logger.getLogger().setLevel(logger.INFO)
 # logger.basicConfig(filename='log_file.log',
