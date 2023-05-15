@@ -1,5 +1,4 @@
 import json
-import spacy
 
 import spacy
 

@@ -1,14 +1,29 @@
+import numpy as np
 import spacy
-# Load a larger pipeline with vectors
-nlp = spacy.load("en_core_web_md")
+from guppy import hpy
 
-doc = nlp("I have a banana")
+h = hpy()
+from scipy.sparse import csr_matrix, hstack
 
-# Access the vector via the token.vector attribute
-print(doc[3].vector)
+nlp = spacy.load("en_core_web_sm")
+a = ["some text 1", "some text 2", "some text 3"]
+# Doc = np.array([nlp(text).vector for text in a])
+# Doc = Doc.reshape((len(a), -1))
+# Doc=csr_matrix(Doc)
+# print(Doc)
+# print(Doc.shape)
 
-# Print the vector representation of each token
-for token in doc:
-    print(token.text)#, token.vector)
-    print(token.shape)
-    print(len(token))
+# arr = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+#
+# newarr = arr.reshape(4, 3)
+#
+# print(newarr)
+
+
+Doc = np.array([nlp(text).vector for text in a])
+# print(Doc)
+print(type(Doc))
+Doc = [nlp(text).vector for text in a]
+# print(Doc)
+print(type(Doc))
+print(h.heap())
