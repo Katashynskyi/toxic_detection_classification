@@ -35,6 +35,10 @@ class ReadPrepare:
         df.drop_duplicates(
             keep=False, subset=["comment_text"], inplace=True
         )  # частково дублікати лишились
+
+        # Cut long comments
+        df["comment_text"] = df["comment_text"].str.slice(0, 100)
+
         df.reset_index(drop=True, inplace=True)
         df["target_class"] = (df["target"] >= 0.5).map(
             int

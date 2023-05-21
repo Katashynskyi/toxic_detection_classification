@@ -45,6 +45,7 @@ class ClassifierModel:
         classifier_type: str = "basemodel",
         vectorizer: str = "tfidf",
         pipeline=None,
+        save_model=False,
     ):
         self.input_data = input_data
         self.n_samples = n_samples
@@ -53,6 +54,7 @@ class ClassifierModel:
         self.classifier_type = classifier_type
         self.pipeline = pipeline
         self.x_train = self.y_train = self.x_test = self.y_test = None
+        self.save_model = save_model
 
     def __training_setup(self):
         # ReadPrepare
@@ -167,8 +169,11 @@ class ClassifierModel:
         # load_prev = True
         # run_version = len(df_runs) + 1
 
-        """Start the MLFlow Run and train the model"""
+        """Train model and save valid metrics to mlflow"""
         with mlflow.start_run():
+            mlflow.set_tag(
+                "mlflow.runName", f"{mlflow.active_run().info.run_name}_valid"
+            )
             """Train & predict"""
             self.pipeline.fit(train_X, train_y)
             logger.info("train is done")
@@ -185,11 +190,6 @@ class ClassifierModel:
                 )
             ).transpose()
 
-            """cross_val_score(nested_CV) of train set"""
-            # kf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-            # score=cross_val_score(self.pipeline,train_X,train_y,cv=StratifiedKFold(n_splits=3, shuffle=True))
-            # logger.info(f"cross_val_score : {score.mean()}")
-
             """Show train metrics"""
             logger.info(
                 f"\n{pd.DataFrame(classification_report(train_y, pred_y, output_dict=1, target_names=['non-toxic', 'toxic'])).transpose()}"
@@ -203,41 +203,39 @@ class ClassifierModel:
             )
 
             # logger.info(" Logging results into file_log.log")
-            logger.info("Training Complete. Logging results into MLFlow")
+            logger.info("Training Complete. Logging valid results into MLFlow")
 
             """Log train metrics"""
             # Precision
-            mlflow.log_metric("Precision", np.round(df.loc["toxic", "precision"], 2))
+            mlflow.log_metric(
+                "Precision_valid", np.round(df.loc["toxic", "precision"], 2)
+            )
 
             # Recall
-            mlflow.log_metric("Recall", np.round(df.loc["toxic", "recall"], 2))
+            mlflow.log_metric("Recall_valid", np.round(df.loc["toxic", "recall"], 2))
 
             # macro_f1
-            mlflow.log_metric("Macro_f1", np.round(df.loc["macro avg", "f1-score"], 2))
+            mlflow.log_metric(
+                "Macro_f1_valid", np.round(df.loc["macro avg", "f1-score"], 2)
+            )
 
             # weighted_f1
             mlflow.log_metric(
-                "Weighted_f1", np.round(df.loc["weighted avg", "f1-score"], 2)
+                "Weighted_f1_valid", np.round(df.loc["weighted avg", "f1-score"], 2)
             )
 
             # Best Score
-            mlflow.log_metric("Best Score", "%.2f " % self.pipeline.best_score_)
+            mlflow.log_metric("Best Score_valid", "%.2f " % self.pipeline.best_score_)
 
             # AUC
-            mlflow.log_metric("AUC", round(roc_auc_score(train_y, pred_y), 2))
+            mlflow.log_metric("AUC_valid", round(roc_auc_score(train_y, pred_y), 2))
 
             # Confusion matrix
             conf_matrix = confusion_matrix(train_y, pred_y)
-            mlflow.log_metric("TP", conf_matrix[0][0])
-            mlflow.log_metric("TN", conf_matrix[1][1])
-            mlflow.log_metric("FP", conf_matrix[0][1])
-            mlflow.log_metric("FN", conf_matrix[1][0])
-
-            # df = df.reset_index()
-            # df.columns = ['category', 'precision', 'recall', 'f1-score', 'support']
-            # df.to_csv("toxicity_full_report.csv")
-            # mlflow.log_artifact("toxicity_full_report.csv")
-            # os.remove("toxicity_full_report.csv")
+            mlflow.log_metric("TN_valid", conf_matrix[0][0])
+            mlflow.log_metric("TP_valid", conf_matrix[1][1])
+            mlflow.log_metric("FP_valid", conf_matrix[0][1])
+            mlflow.log_metric("FN_valid", conf_matrix[1][0])
 
             """Log hyperparams"""
             # best of hyperparameter tuning
@@ -258,21 +256,84 @@ class ClassifierModel:
             """log model type"""
             mlflow.set_tag("Model", self.classifier_type)
 
-            """Log(save) model"""
-            # mlflow.sklearn.log_model(self.pipeline,
-            #                          artifact_path='D:\Programming\Repositories\\toxic_detection_classification\data\model_log',
-            #                          serialization_format='pickle')
-            # mlflow.set_tag("Version", run_version)
-            # logger.info("Model Trained and saved into MLFlow artifact location")
+        """Predict test metrics and save to mlflow"""
+        with mlflow.start_run():
+            mlflow.set_tag(
+                "mlflow.runName", f"{mlflow.active_run().info.run_name}_test"
+            )
+            test_X, test_y = self.test_X, self.test_y
+            """Predict on test data"""
+            pred_y = self.pipeline.predict(test_X)
+            # self.pipeline.save()
 
-            """Test set metrics """
-            # predict_y = pipeline.predict(test_X)
-            # logger.info(f"\n\nTest metrics.")
-            # logger.info(classification_report(test_y, pred_y, target_names=['Not_toxic', 'Toxic']))
-            # logger.info(f"Area Under the Curve score: {round(roc_auc_score(test_y, pred_y), 2)}")
-            # logger.info(f"\n [true negatives  false negatives]\n [true positives  false positives]")
-            # logger.info(f"\n{confusion_matrix(test_y, pred_y)}")
-            # logger.info("Testing completed.")
+            """classification report of train set"""
+            df = pd.DataFrame(
+                classification_report(
+                    y_true=test_y,
+                    y_pred=pred_y,
+                    output_dict=1,
+                    target_names=["non-toxic", "toxic"],
+                )
+            ).transpose()
+
+            """Show train metrics"""
+            logger.info(
+                f"\n{pd.DataFrame(classification_report(test_y, pred_y, output_dict=1, target_names=['non-toxic', 'toxic'])).transpose()}"
+            )
+            logger.info(
+                f"\n    Area Under the Curve score: {round(roc_auc_score(test_y, pred_y), 2)}"
+            )
+            logger.info(
+                f"\n [true negatives  false positives]\n [false negatives  true positives] \
+                        \n {confusion_matrix(test_y, pred_y)}"
+            )
+
+            # logger.info(" Logging results into file_log.log")
+            logger.info("Logging test results into MLFlow")
+
+            """Log train metrics"""
+            # Precisionpycharm
+            mlflow.log_metric(
+                "Precision_test", np.round(df.loc["toxic", "precision"], 2)
+            )
+
+            # Recall
+            mlflow.log_metric("Recall_test", np.round(df.loc["toxic", "recall"], 2))
+
+            # macro_f1
+            mlflow.log_metric(
+                "Macro_f1_test", np.round(df.loc["macro avg", "f1-score"], 2)
+            )
+
+            # weighted_f1
+            mlflow.log_metric(
+                "Weighted_f1_test", np.round(df.loc["weighted avg", "f1-score"], 2)
+            )
+
+            # Best Score
+            mlflow.log_metric("Best Score_test", "%.2f " % self.pipeline.best_score_)
+
+            # AUC
+            mlflow.log_metric("AUC_test", round(roc_auc_score(test_y, pred_y), 2))
+
+            # Confusion matrix
+            conf_matrix = confusion_matrix(test_y, pred_y)
+            mlflow.log_metric("TN_test", conf_matrix[0][0])
+            mlflow.log_metric("TP_test", conf_matrix[1][1])
+            mlflow.log_metric("FP_test", conf_matrix[0][1])
+            mlflow.log_metric("FN_test", conf_matrix[1][0])
+
+        if self.save_model:
+            """Log(save) model"""
+            mlflow.sklearn.log_model(
+                self.pipeline,
+                artifact_path="D:\Programming\Repositories\\toxic_detection_classification\data\model_log",
+                serialization_format="pickle",
+            )
+            # mlflow.set_tag("Version", run_version)
+            logger.info("Model Trained and saved into MLFlow artifact location")
+        else:
+            logger.info("Model Trained but not saved into MLFlow artifact location")
 
 
 if __name__ == "__main__":
@@ -280,7 +341,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path", help="Data path", default="../../DB's/Toxic_database/tox_train.csv"
     )
-    parser.add_argument("--n_samples", help="How many samples to pass?", default=10000)
+    parser.add_argument("--n_samples", help="How many samples to pass?", default=5000)
     parser.add_argument(
         "--n_trials", help="How many trials for hyperparameter tuning?", default=10
     )
@@ -293,7 +354,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--classifier_type",
         help='Choose "basemodel", "xgboost" or "lightgbm"',
-        default="xgboost",
+        default="basemodel",
+    )
+    parser.add_argument(
+        "--save_model",
+        help="Choose True or False",
+        default=False,
     )
     args = parser.parse_args()
     if args.type_of_run == "train":
@@ -303,6 +369,7 @@ if __name__ == "__main__":
             n_trials=args.n_trials,
             vectorizer=args.vectorizer,
             classifier_type=args.classifier_type,
+            save_model=args.save_model,
         )
         classifier.train()
 
