@@ -22,8 +22,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.svm import SVC
 from xgboost import XGBClassifier
 
-from src.utils.features_preprocessing import CustomTfidf, Preprocessor
-from src.utils.spacy_vectorizer import SpacyVectorTransformer
+from src.utils.features_preprocessing import Preprocessor
 from src.utils.utils import ReadPrepare, Split
 
 warnings.filterwarnings("ignore")
@@ -349,7 +348,7 @@ if __name__ == "__main__":
         "--type_of_run", help='"train" of "inference"?', default="train"
     )
     parser.add_argument(
-        "--vectorizer", help='Choose "tfidf" or "spacy"', default="tfidf"
+        "--vectorizer", help='Choose "tfidf" or "spacy"', default="spacy"
     )
     parser.add_argument(
         "--classifier_type",

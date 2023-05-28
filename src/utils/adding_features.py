@@ -114,7 +114,8 @@ class AddingFeatures:
         scaled_x = self._scaler.fit_transform(X)
         return csr_matrix(scaled_x)
 
-    def stack(self, tfidf, norm_indirect_features):
+    @staticmethod
+    def stack(vectorizer, norm_indirect_features):
         """
         Stacking TF-IDF features & indirect features.
 
@@ -129,7 +130,7 @@ class AddingFeatures:
         Extracted features : pd.DataFrame
 
         """
-        return hstack((tfidf, norm_indirect_features))
+        return hstack((vectorizer, norm_indirect_features))
 
 
 if __name__ == "__main__":
