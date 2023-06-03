@@ -23,9 +23,7 @@ class ReadPrepare:
         Contains non-duplicated (almost) comments from the CSV file.
     """
 
-    def __init__(self,
-                 path: str,
-                 n_samples: int = -1):
+    def __init__(self, path: str, n_samples: int = -1):
         self.path = path
         self.n_samples = n_samples
 
@@ -34,9 +32,17 @@ class ReadPrepare:
             df = pd.read_csv(self.path).tail(self.n_samples)
         else:
             df = pd.read_csv(self.path)
-        df.drop_duplicates(keep=False, subset=['comment_text'], inplace=True)  # частково дублікати лишились
+        df.drop_duplicates(
+            keep=False, subset=["comment_text"], inplace=True
+        )  # частково дублікати лишились
+
+        # Cut long comments
+        df["comment_text"] = df["comment_text"].str.slice(0, 100)
+
         df.reset_index(drop=True, inplace=True)
-        df['target_class'] = (df['target'] >= 0.5).map(int)  # if more than .5 - than toxic.
+        df["target_class"] = (df["target"] >= 0.5).map(
+            int
+        )  # if more than .5 - than toxic.
         return df
 
 
@@ -63,10 +69,9 @@ class Split:
         X_test, y_test : A separated DataFrame
     """
 
-    def __init__(self,
-                 df=None,
-                 test_size: float = 0.1,
-                 stratify_by: str = 'target_class'):
+    def __init__(
+        self, df=None, test_size: float = 0.1, stratify_by: str = "target_class"
+    ):
         self._df = df
         self._test_size = test_size
         self._stratify_by = stratify_by
@@ -84,14 +89,16 @@ class Split:
         """
         df = self._df
         df = shuffle(df, random_state=RANDOM_STATE)
-        self._X_train, self._X_test, self._y_train, self._y_test = train_test_split(df['comment_text'],
-                                                                                    df['target_class'],
-                                                                                    stratify=df[self._stratify_by],
-                                                                                    test_size=self._test_size,
-                                                                                    random_state=RANDOM_STATE)
+        self._X_train, self._X_test, self._y_train, self._y_test = train_test_split(
+            df["comment_text"],
+            df["target_class"],
+            stratify=df[self._stratify_by],
+            test_size=self._test_size,
+            random_state=RANDOM_STATE,
+        )
         return self
 
-    def get_train_data(self):# -> tuple[pd.DataFrame, pd.DataFrame]:
+    def get_train_data(self):  # -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Splitting df.
 
@@ -100,9 +107,9 @@ class Split:
         """
         self._split()
         # return self._X_train, self._y_train
-        return self._X_train,self._y_train
+        return self._X_train, self._y_train
 
-    def get_test_data(self):# -> tuple[pd.DataFrame, pd.DataFrame]:
+    def get_test_data(self):  # -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Splitting df.
 
@@ -113,11 +120,11 @@ class Split:
         return self._X_test, self._y_test
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    from features_preprocessing import Preprocessor
+    from sklearn.metrics import classification_report, confusion_matrix
     from sklearn.pipeline import make_pipeline
     from sklearn.svm import LinearSVC
-    from sklearn.metrics import classification_report, confusion_matrix
-    from features_preprocessing import Preprocessor
 
     # Path
     path = "../../../../DB's/Toxic_database/tox_train.csv"
