@@ -8,7 +8,7 @@ from wordcloud import STOPWORDS
 
 class AddingFeatures:
     """
-    Adding indirect features to "comment_text" column and compile it with tf-idf features.
+    Adding indirect features to "comment_text" column and compile it with vectorizer features.
 
     Parameters:
     -----------
@@ -19,10 +19,11 @@ class AddingFeatures:
 
     Methods:
     --------
-    add(self, input_df: pd.DataFrame) -> pd.DataFrame:
+    create(self, input_df: pd.DataFrame) -> pd.DataFrame:
         Adds indirect features to the input DataFrame.
 
-    normalize()???
+    normalize(self, X, y=None) -> csr_matrix:
+        normalizers
 
     stack(self, tfidf: csr_matrix, indirect_features: csr_matrix) -> csr_matrix:
         Stacks the tf-idf and indirect features horizontally to create a single sparse matrix.
@@ -49,9 +50,7 @@ class AddingFeatures:
         self._scaler = scaler
         self._indirect_f = indirect_f
 
-    def create(
-        self, input_df
-    ) -> pd.DataFrame:  # 'DataFrame' object has no attribute 'to_frame'!!!
+    def create(self, input_df) -> pd.DataFrame:
         """
         Create indirect features from the input DataFrame.
 
@@ -98,17 +97,18 @@ class AddingFeatures:
         )
         return input_df[self._indirect_f]
 
-    def normalize(self, X, y=None):
+    def normalize(self, X, y=None) -> csr_matrix:
         """
-        Normalize (scale) indirect features
+        Takes pd.DataFrame from .create() and normalize it.
 
         Parameters:
         -----------
-        x : pandas DataFrame
-            The input data.
+        X : pd.DataFrame
+            additional features only
+        y : None
 
         Returns:
-        --------
+        -------
         Normalized (scaled) csr_matrix
         """
         scaled_x = self._scaler.fit_transform(X)
@@ -121,10 +121,11 @@ class AddingFeatures:
 
         Parameters:
         -----------
-        tfidf : pd.DataFrame
-            Input TF-IDF embedding.
-        indirect_features : pd.DataFrame
-            Input DataFrame containing the text data.
+        vectorizer : pd.DataFrame
+            Input vectorizer embeddings in csr_matrix format.
+        norm_indirect_features : pd.DataFrame
+            Input csr_matrix containing normalized additional features.
+
         Returns:
         --------
         Extracted features : pd.DataFrame
@@ -140,7 +141,7 @@ if __name__ == "__main__":
     path = "../../../../DB's/Toxic_database/tox_train.csv"
 
     # ReadPrepare test
-    df = ReadPrepare(path, 500).data_process()
+    df = ReadPrepare(path, 100000).data_process()
 
     # Split test
     train_X, train_y = Split(df=df).get_train_data()
@@ -173,5 +174,16 @@ if __name__ == "__main__":
         n = "\n"
         return f"stack: {stack} {n} type: {type(stack)}"
 
-    print(run(vectorizer="spacy"))
-    print(run(vectorizer="tfidf"))
+    # print(run(vectorizer="spacy"))
+    X_train = CustomTfidf().fit_transform(train_X)
+
+    # checking SVC
+    from sklearn.svm import LinearSVC
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import classification_report
+
+    svc = LogisticRegression()
+    svc.fit(X_train, y=train_y)
+    pred_y = svc.predict(X_train)
+    report = classification_report(train_y, pred_y)
+    print(report)

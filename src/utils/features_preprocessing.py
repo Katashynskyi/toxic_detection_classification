@@ -5,7 +5,9 @@ from src.utils.custom_tf_idf_vectorizer import CustomTfidf
 from src.utils.adding_features import AddingFeatures
 
 
-#  meta-class hardcoded
+"""switcher"""
+
+
 class Preprocessor(TransformerMixin):
     """
     Hardcoded meta-class of TFIDF or Spacy features

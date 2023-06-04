@@ -5,6 +5,14 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 
 class SpacyVectorTransformer(BaseEstimator, TransformerMixin):
+    """
+    Creates customized spacy vectorizer.
+
+    Returns:
+    --------
+    csr_matrix based on spacy "en_core_web_sm"
+    """
+
     def __init__(self):
         pass
 
@@ -15,7 +23,7 @@ class SpacyVectorTransformer(BaseEstimator, TransformerMixin):
         nlp = spacy.load(
             "en_core_web_sm",
             disable=["tagger", "parser", "attribute_ruler", "lemmatizer", "ner"],
-        )  # tok2vec senter stayin
+        )  # tok2vec & senter staying
         docs = nlp.pipe(texts=X, batch_size=2000)
         vectors = np.vstack([doc.vector for doc in docs])
         return csr_matrix(vectors)
