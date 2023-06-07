@@ -36,6 +36,7 @@ class ClassifierModel:
         self,
         input_data,
         n_samples=800,
+        tox_threshold: float = 0.5,
         n_trials=5,
         classifier_type: str = "logreg",
         vectorizer: str = "tfidf",
@@ -44,6 +45,7 @@ class ClassifierModel:
     ):
         self.input_data = input_data
         self.n_samples = n_samples
+        self.tox_threshold = tox_threshold
         self.n_trials = n_trials
         self.vectorizer = vectorizer
         self.classifier_type = classifier_type
@@ -54,7 +56,9 @@ class ClassifierModel:
 
     def __training_setup(self):
         # ReadPrepare
-        df = ReadPrepare(self.input_data, self.n_samples).data_process()
+        df = ReadPrepare(
+            self.input_data, self.n_samples, self.tox_threshold
+        ).data_process()
 
         # Split
         self.train_X, self.train_y = Split(df=df).get_train_data()
@@ -90,14 +94,16 @@ class ClassifierModel:
             xgb_pipeline = make_pipeline(
                 Preprocessor(vectorizer_type=self.vectorizer),
                 XGBClassifier(
-                    learning_rate=0.05, random_state=RANDOM_STATE, missing=-999
+                    learning_rate=0.05,
+                    random_state=RANDOM_STATE,
+                    scale_pos_weight=9.85,  # ,max_delta_step=5
                 ),
             )
 
             """init hyper-param"""
             param_distributions = {
                 "xgbclassifier__learning_rate": optuna.distributions.CategoricalDistribution(
-                    [0.001, 0.005, 0.1]
+                    [0.001, 0.01, 0.05, 0.005, 0.1]
                 ),
                 "xgbclassifier__max_depth": optuna.distributions.CategoricalDistribution(
                     [3, 5, 8]
@@ -121,7 +127,7 @@ class ClassifierModel:
                 n_trials=self.n_trials,
                 random_state=42,
                 verbose=0,
-                scoring="recall",
+                scoring="roc_auc",
             )
 
         elif self.classifier_type == "lgbm":
@@ -495,9 +501,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path", help="Data path", default="../../DB's/Toxic_database/tox_train.csv"
     )
-    parser.add_argument("--n_samples", help="How many samples to pass?", default=100000)
+    parser.add_argument("--n_samples", help="How many samples to pass?", default=10000)
     parser.add_argument(
-        "--n_trials", help="How many trials for hyperparameter tuning?", default=5
+        "--tox_threshold",
+        help="What's a threshold for toxicity from 0.0 to 1.0?",
+        default=0.5,
+    )
+    parser.add_argument(
+        "--n_trials", help="How many trials for hyperparameter tuning?", default=1
     )
     parser.add_argument(
         "--type_of_run", help='"train" of "inference"?', default="train"
@@ -520,6 +531,7 @@ if __name__ == "__main__":
         classifier = ClassifierModel(
             input_data=args.path,
             n_samples=args.n_samples,
+            tox_threshold=args.tox_threshold,
             n_trials=args.n_trials,
             vectorizer=args.vectorizer,
             classifier_type=args.classifier_type,

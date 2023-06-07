@@ -23,9 +23,10 @@ class ReadPrepare:
         Contains non-duplicated (almost) comments from the CSV file.
     """
 
-    def __init__(self, path: str, n_samples: int = -1):
+    def __init__(self, path: str, n_samples: int = -1, tox_threshold=0.5):
         self.path = path
         self.n_samples = n_samples
+        self.tox_threshold = tox_threshold
 
     def data_process(self) -> pd.DataFrame:
         if self.n_samples:
@@ -34,15 +35,18 @@ class ReadPrepare:
             df = pd.read_csv(self.path)
         df.drop_duplicates(
             keep=False, subset=["comment_text"], inplace=True
-        )  # частково дублікати лишились
+        )  # duplicates partly left
+
+        # remove links
+        df["comment_text"] = df["comment_text"].str.replace(
+            r"http\S+", "<URL>", regex=True
+        )
 
         # Cut long comments
-        df["comment_text"] = df["comment_text"].str.slice(0, 100)
+        df["comment_text"] = df["comment_text"].str.slice(0, 300)
 
         df.reset_index(drop=True, inplace=True)
-        df["target_class"] = (df["target"] >= 0.5).map(
-            int
-        )  # if more than .5 - than toxic.
+        df["target_class"] = (df["target"] >= self.tox_threshold).map(int)
         return df
 
 

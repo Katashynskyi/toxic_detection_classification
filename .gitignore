@@ -8,6 +8,7 @@ Task_description.txt
 data/
 src/temp/
 Testing/
+Testing/empty.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

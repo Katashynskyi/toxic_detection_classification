@@ -21,7 +21,7 @@ class SpacyVectorTransformer(BaseEstimator, TransformerMixin):
 
     def transform(self, X, y=None):
         nlp = spacy.load(
-            "en_core_web_sm",
+            "en_core_web_md",
             disable=["tagger", "parser", "attribute_ruler", "lemmatizer", "ner"],
         )  # tok2vec & senter staying
         docs = nlp.pipe(texts=X, batch_size=2000)
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     path = "../../../../DB's/Toxic_database/tox_train.csv"
 
     # ReadPrepare test
-    df = ReadPrepare(path, 100000).data_process()
+    df = ReadPrepare(path, 10000).data_process()
 
     # Split test
     train_X, train_y = Split(df=df).get_train_data()
