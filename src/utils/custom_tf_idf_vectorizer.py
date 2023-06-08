@@ -33,7 +33,7 @@ class CustomTfidf:
         max_df: float = 0.8,
         min_df: float = 10,
         ngram_range: tuple = (1, 1),
-        max_feat=None,
+        max_feat=300,
         norm="l2",
     ):
         self._tfidf = TfidfVectorizer(
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     path = "../../../../DB's/Toxic_database/tox_train.csv"
 
     # ReadPrepare test
-    df = ReadPrepare(path, 500).data_process()
+    df = ReadPrepare(path, 10000).data_process()
 
     # Split test
     train_X, train_y = Split(df=df).get_train_data()

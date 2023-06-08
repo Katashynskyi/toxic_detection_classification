@@ -1,7 +1,6 @@
 # morea_MY
 run_train.sh
 run_train.py
-Testing/optuna_6_variants.py
 .ipynb_checkpoints/
 mlruns/
 .idea/
@@ -9,6 +8,7 @@ Task_description.txt
 data/
 src/temp/
 Testing/
+Testing/empty.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

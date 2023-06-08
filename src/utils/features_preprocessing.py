@@ -5,7 +5,9 @@ from src.utils.custom_tf_idf_vectorizer import CustomTfidf
 from src.utils.adding_features import AddingFeatures
 
 
-#  meta-class hardcoded
+"""switcher"""
+
+
 class Preprocessor(TransformerMixin):
     """
     Hardcoded meta-class of TFIDF or Spacy features
@@ -77,17 +79,45 @@ class Preprocessor(TransformerMixin):
 
 
 if __name__ == "__main__":
+    import time
+    import psutil
     from src.utils.utils import ReadPrepare, Split
+
+    # Start time
+    start_time = time.time()
+
+    # Track initial memory usage
+    initial_memory = psutil.virtual_memory().used
 
     # path
     path = "../../../../DB's/Toxic_database/tox_train.csv"
 
     # ReadPrepare test
-    df = ReadPrepare(path, 500).data_process()
+    df = ReadPrepare(path, 10000).data_process()
 
     # Split test
     train_X, train_y = Split(df=df).get_train_data()
 
     # p = Preprocessor(vectorizer_type='spacy').fit(train_X).transform(train_X)
-    p = Preprocessor(vectorizer_type="tfidf").fit_transform(train_X)
+    p = Preprocessor(vectorizer_type="spacy").fit_transform(train_X)
     print(p)
+
+    # Track final memory usage
+    final_memory = psutil.virtual_memory().used
+
+    # End time
+    end_time = time.time()
+
+    # Calculate the elapsed time
+    elapsed_time = round((end_time - start_time), 2)
+    memory_usage = final_memory - initial_memory
+
+    # Print the elapsed time
+    print(
+        "Training time:",
+        elapsed_time,
+        "seconds",
+        "Memory usage:",
+        abs(round((memory_usage / 1000000), 0)),
+        "MB",
+    )

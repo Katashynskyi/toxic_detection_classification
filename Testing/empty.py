@@ -1,8 +1,6 @@
-import dask.array as da
+import os
 
-images = da.ones((10000, 1000, 1000))
-print(images)
-import numpy as np
-
-images = np.array((10000, 1000, 1000))
-print(images)
+os.makedirs("data", exist_ok=True)
+for model_name in ["concatenate", "image", "text", "glove"]:
+    os.makedirs(f"models/{model_name}", exist_ok=True)
+    os.makedirs(f"result/{model_name}", exist_ok=True)
