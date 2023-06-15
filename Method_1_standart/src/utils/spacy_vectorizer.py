@@ -34,8 +34,7 @@ if __name__ == "__main__":
     import psutil
 
     # TODO: додати фічі з spacy as: частину мови, частину речення, etc
-    from src.utils.utils import ReadPrepare, Split
-    from features_preprocessing import AddingFeatures
+    from Method_1_standart.src.utils.utils import ReadPrepare, Split
 
     # Start time
     start_time = time.time()
@@ -44,7 +43,7 @@ if __name__ == "__main__":
     initial_memory = psutil.virtual_memory().used
 
     # path
-    path = "../../../../DB's/Toxic_database/tox_train.csv"
+    path = "../../../../../DB's/Toxic_database/tox_train.csv"
 
     # ReadPrepare test
     df = ReadPrepare(path, 10000).data_process()

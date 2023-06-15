@@ -135,10 +135,10 @@ class AddingFeatures:
 
 
 if __name__ == "__main__":
-    from src.utils.utils import ReadPrepare, Split
+    from Method_1_standart.src.utils.utils import ReadPrepare, Split
 
     # path
-    path = "../../../../DB's/Toxic_database/tox_train.csv"
+    path = "../../../../../DB's/Toxic_database/tox_train.csv"
 
     # ReadPrepare test
     df = ReadPrepare(path, 100000).data_process()
@@ -157,8 +157,8 @@ if __name__ == "__main__":
     # print(f"normalize type: {type(normalize)}")
 
     # AddingFeatures stack test
-    from src.utils.spacy_vectorizer import SpacyVectorTransformer
-    from src.utils.custom_tf_idf_vectorizer import CustomTfidf
+    from Method_1_standart.src.utils.spacy_vectorizer import SpacyVectorTransformer
+    from Method_1_standart.src.utils.custom_tf_idf_vectorizer import CustomTfidf
 
     def run(vectorizer: str = None):
         """
@@ -178,7 +178,6 @@ if __name__ == "__main__":
     X_train = CustomTfidf().fit_transform(train_X)
 
     # checking SVC
-    from sklearn.svm import LinearSVC
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import classification_report
 

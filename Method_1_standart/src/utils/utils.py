@@ -131,7 +131,7 @@ if __name__ == "__main__":
     from sklearn.svm import LinearSVC
 
     # Path
-    path = "../../../../DB's/Toxic_database/tox_train.csv"
+    path = "../../../../../DB's/Toxic_database/tox_train.csv"
     # ReadPrepare test
     rp = ReadPrepare(path=path, n_samples=-1).data_process()  # csv -> pd.DataFrame
     # Split test

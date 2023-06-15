@@ -40,11 +40,10 @@ class Word2VecTransformer(BaseEstimator, TransformerMixin):
 
 if __name__ == "__main__":
     # TODO: додати фічі з spacy as: частину мови, частину речення, etc
-    from src.utils.utils import ReadPrepare, Split
-    from cupy.cuda import memory
+    from Method_1_standart.src.utils.utils import ReadPrepare, Split
 
     # path
-    path = "../../../../DB's/Toxic_database/tox_train.csv"
+    path = "../../../../../DB's/Toxic_database/tox_train.csv"
 
     # ReadPrepare test
     df = ReadPrepare(path, 100000).data_process()

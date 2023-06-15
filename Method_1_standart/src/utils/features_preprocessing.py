@@ -1,8 +1,8 @@
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.base import TransformerMixin
-from src.utils.spacy_vectorizer import SpacyVectorTransformer
-from src.utils.custom_tf_idf_vectorizer import CustomTfidf
-from src.utils.adding_features import AddingFeatures
+from Method_1_standart.src.utils.spacy_vectorizer import SpacyVectorTransformer
+from Method_1_standart.src.utils.custom_tf_idf_vectorizer import CustomTfidf
+from Method_1_standart.src.utils.adding_features import AddingFeatures
 
 
 """switcher"""
@@ -81,7 +81,7 @@ class Preprocessor(TransformerMixin):
 if __name__ == "__main__":
     import time
     import psutil
-    from src.utils.utils import ReadPrepare, Split
+    from Method_1_standart.src.utils.utils import ReadPrepare, Split
 
     # Start time
     start_time = time.time()
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     initial_memory = psutil.virtual_memory().used
 
     # path
-    path = "../../../../DB's/Toxic_database/tox_train.csv"
+    path = "../../../../../DB's/Toxic_database/tox_train.csv"
 
     # ReadPrepare test
     df = ReadPrepare(path, 10000).data_process()

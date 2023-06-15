@@ -127,10 +127,10 @@ class CustomTfidf:
 
 
 if __name__ == "__main__":
-    from src.utils.utils import ReadPrepare, Split
+    from Method_1_standart.src.utils.utils import ReadPrepare, Split
 
     # path
-    path = "../../../../DB's/Toxic_database/tox_train.csv"
+    path = "../../../../../DB's/Toxic_database/tox_train.csv"
 
     # ReadPrepare test
     df = ReadPrepare(path, 10000).data_process()

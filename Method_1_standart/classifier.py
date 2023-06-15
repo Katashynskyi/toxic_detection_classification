@@ -68,15 +68,17 @@ class ClassifierModel:
         if self.classifier_type == "logreg":
             logreg_pipeline = make_pipeline(
                 Preprocessor(vectorizer_type=self.vectorizer),
-                LogisticRegression(random_state=RANDOM_STATE),
+                LogisticRegression(
+                    random_state=RANDOM_STATE, class_weight={0: 10, 1: 90}
+                ),
             )
 
             """init hyper-param"""
             param_distributions = {
                 "logisticregression__C": optuna.distributions.CategoricalDistribution(
                     [1, 10, 50, 100, 200, 500]
-                )
-            }  # ,
+                ),
+            }
             # "svc__gamma":optuna.distributions.FloatDistribution(1e-4,1)}
 
             """optimization"""
@@ -85,7 +87,7 @@ class ClassifierModel:
                 param_distributions,
                 cv=self.skf,
                 n_trials=self.n_trials,
-                random_state=42,
+                random_state=RANDOM_STATE,
                 verbose=0,
                 scoring="recall",
             )
@@ -93,29 +95,34 @@ class ClassifierModel:
         elif self.classifier_type == "xgboost":
             xgb_pipeline = make_pipeline(
                 Preprocessor(vectorizer_type=self.vectorizer),
-                XGBClassifier(
-                    learning_rate=0.05,
-                    random_state=RANDOM_STATE,
-                    scale_pos_weight=9.85,  # ,max_delta_step=5
-                ),
+                XGBClassifier(random_state=RANDOM_STATE),
             )
 
             """init hyper-param"""
             param_distributions = {
                 "xgbclassifier__learning_rate": optuna.distributions.CategoricalDistribution(
-                    [0.001, 0.01, 0.05, 0.005, 0.1]
+                    [0.001, 0.005, 0.01, 0.05, 0.1]
                 ),
                 "xgbclassifier__max_depth": optuna.distributions.CategoricalDistribution(
-                    [3, 5, 8]
+                    [10, 8, 5]
                 ),
                 "xgbclassifier__min_child_weight": optuna.distributions.CategoricalDistribution(
-                    [11, 13, 15]
+                    [15, 13, 11]
                 ),
+                # imbalance param: subsample: 0-1
                 "xgbclassifier__subsample": optuna.distributions.CategoricalDistribution(
-                    [0.7, 0.8]
+                    [0.6, 0.7]
                 ),
                 "xgbclassifier__n_estimators": optuna.distributions.CategoricalDistribution(
                     [500, 600, 800, 1000]
+                ),
+                # imbalance param: scale_pos_weight :  sum(negative instances) / sum(positive instances)
+                "xgbclassifier__scale_pos_weight": optuna.distributions.CategoricalDistribution(
+                    [9.85]
+                ),
+                # imbalance param: max_delta_step : 1-10
+                "xgbclassifier__max_delta_step": optuna.distributions.CategoricalDistribution(
+                    [10]
                 ),
             }
 
@@ -125,17 +132,40 @@ class ClassifierModel:
                 param_distributions,
                 cv=self.skf,
                 n_trials=self.n_trials,
-                random_state=42,
+                random_state=RANDOM_STATE,
                 verbose=0,
                 scoring="roc_auc",
             )
 
         elif self.classifier_type == "lgbm":
             lgbm_pipeline = make_pipeline(
-                Preprocessor(vectorizer_type=self.vectorizer), lgb.LGBMClassifier()
+                Preprocessor(vectorizer_type=self.vectorizer),
+                lgb.LGBMClassifier(
+                    random_state=RANDOM_STATE,
+                ),
             )
             """init hyper-param"""
-            param_distributions = {}
+            param_distributions = {
+                # "lgbmclassifier__learning_rate": optuna.distributions.CategoricalDistribution(
+                #     [0.001, 0.005, 0.01, 0.05, 0.1] #default 0.1 is best
+                # ),
+                # "lgbmclassifier__max_depth": optuna.distributions.CategoricalDistribution(
+                #     [10, 8, 5] # spoils a lot
+                # ),
+                "lgbmclassifier__num_leaves": optuna.distributions.CategoricalDistribution(
+                    [23]
+                ),
+                # "lgbmclassifier__min_child_weight": optuna.distributions.CategoricalDistribution(
+                #     [15,13,11] # spoils a lot
+                # ),
+                "lgbmclassifier__scale_pos_weight": optuna.distributions.CategoricalDistribution(
+                    [9.8]
+                ),
+                "lgbmclassifier__n_estimators": optuna.distributions.CategoricalDistribution(
+                    [500, 600, 800, 1000]
+                ),
+                # "lgbmclassifier__"
+            }
             # param_distributions = {'num_leaves': 5,
             #           'objective': 'multiclass',
             #           'num_class': len(np.unique(self.y_train)),
@@ -147,7 +177,7 @@ class ClassifierModel:
                 param_distributions,
                 cv=self.skf,
                 n_trials=self.n_trials,
-                random_state=42,
+                random_state=RANDOM_STATE,
                 verbose=0,
                 scoring="recall",
             )
@@ -262,28 +292,28 @@ class ClassifierModel:
 
             """Log train metrics"""
             # Precision
-            mlflow.log_metric("Precision_train", mean_precision)
+            mlflow.log_metric("Precision", mean_precision)
 
             # Recall
-            mlflow.log_metric("Recall_train", mean_recall)
+            mlflow.log_metric("Recall", mean_recall)
 
             # macro_f1
-            mlflow.log_metric("Macro_f1_train", mean_macro_f1)
+            mlflow.log_metric("F1_macro", mean_macro_f1)
 
             # weighted_f1
-            mlflow.log_metric("Weighted_f1_train", mean_weighted_f1)
+            mlflow.log_metric("F1_weighted", mean_weighted_f1)
 
             # Best Score
-            mlflow.log_metric("Best Score_train", "%.2f " % mean_best_score_train)
+            mlflow.log_metric("Best Score", "%.2f " % mean_best_score_train)
 
             # AUC
-            mlflow.log_metric("AUC_train", mean_AUC_train)
+            mlflow.log_metric("AUC", mean_AUC_train)
 
             # Confusion matrix
-            mlflow.log_metric("TN_train", mean_TN_train)
-            mlflow.log_metric("TP_train", mean_TP_train)
-            mlflow.log_metric("FP_train", mean_FP_train)
-            mlflow.log_metric("FN_train", mean_FN_train)
+            mlflow.log_metric("Conf_TN", mean_TN_train)
+            mlflow.log_metric("Conf_TP", mean_TP_train)
+            mlflow.log_metric("Conf_FP", mean_FP_train)
+            mlflow.log_metric("Conf_FN", mean_FN_train)
 
             """Log hyperparams"""
             # best of hyperparameter tuning
@@ -300,6 +330,9 @@ class ClassifierModel:
 
             # number of trials of of hyperparameter tuning
             mlflow.log_param("n_trials", self.n_trials)
+
+            # toxicity threshold
+            mlflow.log_param("tox_threshold", self.tox_threshold)
 
             """log model type"""
             mlflow.set_tag("Model", self.classifier_type)
@@ -392,28 +425,28 @@ class ClassifierModel:
 
             """Log valid metrics"""
             # Precision
-            mlflow.log_metric("Precision_valid", mean_precision)
+            mlflow.log_metric("Precision", mean_precision)
 
             # Recall
-            mlflow.log_metric("Recall_valid", mean_recall)
+            mlflow.log_metric("Recall", mean_recall)
 
             # macro_f1
-            mlflow.log_metric("Macro_f1_valid", mean_macro_f1)
+            mlflow.log_metric("F1_macro", mean_macro_f1)
 
             # weighted_f1
-            mlflow.log_metric("Weighted_f1_valid", mean_weighted_f1)
+            mlflow.log_metric("F1_weighted", mean_weighted_f1)
 
             # Best Score
-            mlflow.log_metric("Best Score_valid", "%.2f " % mean_best_score)
+            mlflow.log_metric("Best Score", "%.2f " % mean_best_score)
 
             # AUC
-            mlflow.log_metric("AUC_valid", mean_AUC)
+            mlflow.log_metric("AUC", mean_AUC)
 
             # Confusion matrix
-            mlflow.log_metric("TN_valid", mean_TN_valid)
-            mlflow.log_metric("TP_valid", mean_TP_valid)
-            mlflow.log_metric("FP_valid", mean_FP_valid)
-            mlflow.log_metric("FN_valid", mean_FN_valid)
+            mlflow.log_metric("Conf_TN", mean_TN_valid)
+            mlflow.log_metric("Conf_TP", mean_TP_valid)
+            mlflow.log_metric("Conf_FP", mean_FP_valid)
+            mlflow.log_metric("Conf_FN", mean_FN_valid)
 
         """Predict test metrics and save to mlflow"""
         with mlflow.start_run():
@@ -453,41 +486,37 @@ class ClassifierModel:
 
             """Log train metrics"""
             # Precisionpycharm
-            mlflow.log_metric(
-                "Precision_test", np.round(df.loc["toxic", "precision"], 2)
-            )
+            mlflow.log_metric("Precision", np.round(df.loc["toxic", "precision"], 2))
 
             # Recall
-            mlflow.log_metric("Recall_test", np.round(df.loc["toxic", "recall"], 2))
+            mlflow.log_metric("Recall", np.round(df.loc["toxic", "recall"], 2))
 
             # macro_f1
-            mlflow.log_metric(
-                "Macro_f1_test", np.round(df.loc["macro avg", "f1-score"], 2)
-            )
+            mlflow.log_metric("F1_macro", np.round(df.loc["macro avg", "f1-score"], 2))
 
             # weighted_f1
             mlflow.log_metric(
-                "Weighted_f1_test", np.round(df.loc["weighted avg", "f1-score"], 2)
+                "F1_weighted", np.round(df.loc["weighted avg", "f1-score"], 2)
             )
 
             # Best Score
-            mlflow.log_metric("Best Score_test", "%.2f " % self.pipeline.best_score_)
+            mlflow.log_metric("Best Score", "%.2f " % self.pipeline.best_score_)
 
             # AUC
-            mlflow.log_metric("AUC_test", round(roc_auc_score(test_y, pred_y), 2))
+            mlflow.log_metric("AUC", round(roc_auc_score(test_y, pred_y), 2))
 
             # Confusion matrix
             conf_matrix = confusion_matrix(test_y, pred_y)
-            mlflow.log_metric("TN_test", conf_matrix[0][0])
-            mlflow.log_metric("TP_test", conf_matrix[1][1])
-            mlflow.log_metric("FP_test", conf_matrix[0][1])
-            mlflow.log_metric("FN_test", conf_matrix[1][0])
+            mlflow.log_metric("Conf_TN", conf_matrix[0][0])
+            mlflow.log_metric("Conf_TP", conf_matrix[1][1])
+            mlflow.log_metric("Conf_FP", conf_matrix[0][1])
+            mlflow.log_metric("Conf_FN", conf_matrix[1][0])
 
         if self.save_model:
             """Log(save) model"""
             mlflow.sklearn.log_model(
                 self.pipeline,
-                artifact_path="D:\Programming\Repositories\\toxic_detection_classification\data\model_log",
+                artifact_path="/Method_1_standart/data/model_log",
                 serialization_format="pickle",
             )
             # mlflow.set_tag("Version", run_version)
@@ -499,13 +528,16 @@ class ClassifierModel:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "--path", help="Data path", default="../../DB's/Toxic_database/tox_train.csv"
+        "--path",
+        help="Data path",
+        default="../../../DB's/Toxic_database/tox_train.csv",  # Home-PC
+        # default="D:/web/tox_train.csv",  # Work-PC
     )
     parser.add_argument("--n_samples", help="How many samples to pass?", default=10000)
     parser.add_argument(
         "--tox_threshold",
         help="What's a threshold for toxicity from 0.0 to 1.0?",
-        default=0.5,
+        default=0.475,
     )
     parser.add_argument(
         "--n_trials", help="How many trials for hyperparameter tuning?", default=1
@@ -518,8 +550,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--classifier_type",
-        help='Choose "logreg", "xgboost" or "lightgbm"',
-        default="xgboost",
+        help='Choose "logreg", "xgboost" or "lgbm"',
+        default="logreg",
     )
     parser.add_argument(
         "--save_model",

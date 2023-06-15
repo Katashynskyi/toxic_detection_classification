@@ -1,14 +1,12 @@
-# morea_MY
-run_train.sh
-run_train.py
-.ipynb_checkpoints/
-mlruns/
+#  Morea_MY
 .idea/
 Task_description.txt
-data/
-src/temp/
-Testing/
-Testing/empty.py
+Method_1_standart/data/
+Method_1_standart/mlruns/
+Method_1_standart/src/temp/
+Method_1_standart/run_train.py
+Method_1_standart/run_train.sh
+Method_2_transformer/Testing/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
