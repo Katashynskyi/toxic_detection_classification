@@ -3,11 +3,14 @@ import torch
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from transformers import DistilBertTokenizer, DistilBertModel
+import warnings
 
-MAX_LEN = 512
-TRAIN_BATCH_SIZE = 16
-VALID_BATCH_SIZE = 16
-EPOCHS = 3
+warnings.filterwarnings("ignore")
+
+MAX_LEN = 300
+TRAIN_BATCH_SIZE = 64
+VALID_BATCH_SIZE = 64
+EPOCHS = 1
 LEARNING_RATE = 1e-05
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(DEVICE)
@@ -29,7 +32,11 @@ train_data["labels"] = train_data[label_columns].apply(lambda x: list(x), axis=1
 train_data.drop(["id"], inplace=True, axis=1)
 train_data.drop(label_columns, inplace=True, axis=1)
 
+
 # print(train_data.head())
+
+
+# In[6]:
 
 
 class MultiLabelDataset(Dataset):
@@ -74,12 +81,20 @@ class MultiLabelDataset(Dataset):
         return out
 
 
-train_size = 1.0
+# In[7]:
+
+
+train_size = 0.005
+valid_size = 0.01
 
 train_df = train_data.sample(frac=train_size, random_state=123)
-val_df = train_data.drop(train_df.index).reset_index(drop=True)
+# val_df = train_data.drop(train_df.index).reset_index(drop=True)
+val_df = (
+    train_data.sample(frac=valid_size, random_state=123)
+    .drop(train_df.index)
+    .reset_index(drop=True)
+)
 train_df = train_df.reset_index(drop=True)
-
 
 print("Orig Dataset: {}".format(train_data.shape))
 print("Training Dataset: {}".format(train_df.shape))
@@ -91,14 +106,33 @@ tokenizer = DistilBertTokenizer.from_pretrained(
 training_set = MultiLabelDataset(train_df, tokenizer, MAX_LEN)
 val_set = MultiLabelDataset(val_df, tokenizer, MAX_LEN)
 
-train_params = {"batch_size": TRAIN_BATCH_SIZE, "shuffle": True, "num_workers": 8}
+# In[8]:
 
-val_params = {"batch_size": VALID_BATCH_SIZE, "shuffle": False, "num_workers": 8}
 
-training_loader = DataLoader(training_set, **train_params)
+train_params = {
+    "batch_size": TRAIN_BATCH_SIZE,
+    "shuffle": False,
+    # 'num_workers': 2
+}
+
+val_params = {
+    "batch_size": VALID_BATCH_SIZE,
+    "shuffle": False,
+    # 'num_workers': 8
+}
+
+training_loader = DataLoader(
+    training_set,
+    **train_params,
+)
+
+
 # val_loader = DataLoader(val_set, **val_params)
 
-# Model
+
+# # Model
+
+# In[9]:
 
 
 class DistilBERTClass(torch.nn.Module):
@@ -124,9 +158,15 @@ class DistilBERTClass(torch.nn.Module):
 model = DistilBERTClass()
 model.to(DEVICE)
 
+# In[10]:
+
+
 optimizer = torch.optim.Adam(params=model.parameters(), lr=LEARNING_RATE)
 
-# Training
+
+# # Training
+
+# In[11]:
 
 
 def train(epoch):
@@ -143,12 +183,88 @@ def train(epoch):
         optimizer.zero_grad()
         loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, targets)
 
-        if _ % 5000 == 0:
+        if _ % 10 == 0:
             print(f"Epoch: {epoch}, Loss:  {loss.item()}")
 
         loss.backward()
         optimizer.step()
 
 
+# In[12]:
+
+
 for epoch in range(EPOCHS):
     train(epoch)
+
+# # Generate Test Submissions
+
+# In[14]:
+
+
+test_data = pd.read_csv(PATH)
+print(test_data.head())
+
+# In[15]:
+
+
+test_set = MultiLabelDataset(test_data, tokenizer, MAX_LEN, new_data=True)
+test_loader = DataLoader(test_set, **val_params)
+
+# In[16]:
+
+
+all_test_pred = []
+
+
+def test(epoch):
+    model.eval()
+
+    with torch.inference_mode():
+        for _, data in tqdm(enumerate(test_loader, 0)):
+            ids = data["ids"].to(DEVICE, dtype=torch.long)
+            mask = data["mask"].to(DEVICE, dtype=torch.long)
+            token_type_ids = data["token_type_ids"].to(DEVICE, dtype=torch.long)
+            outputs = model(ids, mask, token_type_ids)
+            probas = torch.sigmoid(outputs)
+
+            all_test_pred.append(probas)
+
+    return probas
+
+
+probas = test(model)
+
+# In[17]:
+
+
+all_test_pred = torch.cat(all_test_pred)
+
+# In[18]:
+
+
+submit_df = test_data.copy()
+submit_df.drop("comment_text", inplace=True, axis=1)
+
+# In[19]:
+
+
+label_columns = [
+    "toxic",
+    "severe_toxic",
+    "obscene",
+    "threat",
+    "insult",
+    "identity_hate",
+]
+
+# In[20]:
+
+
+for i, name in enumerate(label_columns):
+    submit_df[name] = all_test_pred[:, i].cpu()
+    submit_df.head()
+
+# In[21]:
+
+
+submit_df.to_csv("submission.csv", index=False)
