@@ -1,21 +1,46 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+# get_ipython().system('conda install watermark -c conda-forge --yes')
+
+
+# In[2]:
+
+
+# get_ipython().run_line_magic('load_ext', 'watermark')
+# get_ipython().run_line_magic('watermark', '-p torch,transformers,pandas,tqdm')
+
+
+# In[3]:
+
+
 import pandas as pd
 import torch
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from transformers import DistilBertTokenizer, DistilBertModel
-import warnings
 
-warnings.filterwarnings("ignore")
+# # Config
+
+# In[4]:
+
 
 MAX_LEN = 300
-TRAIN_BATCH_SIZE = 64
-VALID_BATCH_SIZE = 64
+TRAIN_BATCH_SIZE = 32
+VALID_BATCH_SIZE = 32
 EPOCHS = 1
 LEARNING_RATE = 1e-05
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(DEVICE)
 
-PATH = "D:/Programming/DB's/Toxic_database/temp_test.csv"
+# # Load and Prepare Dataset
+
+# In[5]:
+
+PATH = "D:/Programming/db's/toxicity_kaggle_1/train.csv"
 
 train_data = pd.read_csv(PATH)
 
@@ -32,8 +57,7 @@ train_data["labels"] = train_data[label_columns].apply(lambda x: list(x), axis=1
 train_data.drop(["id"], inplace=True, axis=1)
 train_data.drop(label_columns, inplace=True, axis=1)
 
-
-# print(train_data.head())
+train_data.head()
 
 
 # In[6]:
@@ -84,17 +108,14 @@ class MultiLabelDataset(Dataset):
 # In[7]:
 
 
-train_size = 0.005
-valid_size = 0.01
+train_size = 0.001
+valid_size = 0.001
 
-train_df = train_data.sample(frac=train_size, random_state=123)
+train_df = train_data.sample(frac=train_size, random_state=123).reset_index(drop=True)
 # val_df = train_data.drop(train_df.index).reset_index(drop=True)
-val_df = (
-    train_data.sample(frac=valid_size, random_state=123)
-    .drop(train_df.index)
-    .reset_index(drop=True)
-)
-train_df = train_df.reset_index(drop=True)
+val_df = train_data.sample(frac=valid_size, random_state=321).reset_index(drop=True)
+# train_df = train_df
+
 
 print("Orig Dataset: {}".format(train_data.shape))
 print("Training Dataset: {}".format(train_df.shape))
@@ -111,8 +132,8 @@ val_set = MultiLabelDataset(val_df, tokenizer, MAX_LEN)
 
 train_params = {
     "batch_size": TRAIN_BATCH_SIZE,
-    "shuffle": False,
-    # 'num_workers': 2
+    "shuffle": True,
+    # 'num_workers': 8
 }
 
 val_params = {
@@ -121,10 +142,7 @@ val_params = {
     # 'num_workers': 8
 }
 
-training_loader = DataLoader(
-    training_set,
-    **train_params,
-)
+training_loader = DataLoader(training_set, **train_params)
 
 
 # val_loader = DataLoader(val_set, **val_params)
@@ -183,7 +201,7 @@ def train(epoch):
         optimizer.zero_grad()
         loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, targets)
 
-        if _ % 10 == 0:
+        if _ % 50 == 0:
             print(f"Epoch: {epoch}, Loss:  {loss.item()}")
 
         loss.backward()
@@ -200,9 +218,10 @@ for epoch in range(EPOCHS):
 
 # In[14]:
 
+PATH2 = "D:/Programming/db's/toxicity_kaggle_1/test.csv"
 
-test_data = pd.read_csv(PATH)
-print(test_data.head())
+test_data = pd.read_csv(PATH2)
+test_data.head()
 
 # In[15]:
 
@@ -268,3 +287,5 @@ for i, name in enumerate(label_columns):
 
 
 submit_df.to_csv("submission.csv", index=False)
+
+# In[ ]:

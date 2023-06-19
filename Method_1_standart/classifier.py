@@ -530,8 +530,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path",
         help="Data path",
-        default="../../../DB's/Toxic_database/tox_train.csv",  # Home-PC
-        # default="D:/web/tox_train.csv",  # Work-PC
+        # default="../../../DB's/Toxic_database/tox_train.csv",  # Home-PC
+        default="D:/Programming/db's/toxicity_main/tox_train.csv",  # Work-PC
     )
     parser.add_argument("--n_samples", help="How many samples to pass?", default=10000)
     parser.add_argument(
