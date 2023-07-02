@@ -1,14 +1,26 @@
+import numpy as np
 import pandas as pd
 import torch
+import argparse
+import mlflow
+from mlflow import log_artifacts, log_metric, log_param
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from transformers import DistilBertTokenizer, DistilBertModel
-from Method_1_standart.src.utils.utils import Split
-from sklearn.model_selection import train_test_split
-from sklearn.utils import shuffle
+from src.utils.utils import Split, ReadPrepare
+from sklearn import metrics
+import warnings
+from collections import Counter
+
+warnings.filterwarnings("ignore")
+
+desired_width = 1000
+pd.set_option("display.width", desired_width)
+pd.set_option("display.max_columns", 100)
 
 RANDOM_STATE = 42
-MAX_LEN = 512
+# MAX_LEN = 512 # work_PC
+MAX_LEN = 100  # home_PC
 TRAIN_BATCH_SIZE = 16
 VALID_BATCH_SIZE = 16
 EPOCHS = 1
@@ -16,47 +28,38 @@ LEARNING_RATE = 1e-05
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(DEVICE)
 
-PATH = "D:/Programming/db's/toxicity_kaggle_1/train.csv" # work_PC
-PATH2 = "D:/Programming/db's/toxicity_kaggle_1/test.csv" # work_PC
-# PATH = "D:/Programming/DB's/toxic_db_for_transformert/train.csv" # home_PC
+
+# Path's
+# PATH = "D:/Programming/db's/toxicity_kaggle_1/train.csv" # work_PC
+# PATH2 = "D:/Programming/db's/toxicity_kaggle_1/test.csv" # work_PC
+PATH = "D:/Programming/DB's/toxic_db_for_transformert/train.csv"  # home_PC
 # PATH2 = "D:/Programming/DB's/toxic_db_for_transformert/test.csv" # home_PC
 
+# ReadPrepare train & test csv files
+rp = ReadPrepare(path=PATH, n_samples=10000).data_process()  # csv -> pd.DataFrame
+# Split df on train & valid & test
+splitter = Split(df=rp, test_size=0.3)
+train_data = splitter.get_train_data().reset_index()  # -> pd.DataFrame
+valid_data = splitter.get_valid_data().reset_index()  # -> pd.DataFrame
+test_data = splitter.get_test_data().reset_index()  # -> pd.DataFrame
 
-train_data = pd.read_csv(PATH)
-# test_data = pd.read_csv(PATH2)
-# TODO: utils split refactor
-X_train,train_test_split(train_data,train_size=0.001,test_size=0.001)
-X_train, X_test, y_train, y_test = train_test_split(
-            train_data,
-            df["target_class"],
-            stratify=df[self._stratify_by],
-            test_size=self._test_size,
-            random_state=RANDOM_STATE,
-train_size = 0.002
 
-train_df = train_data.sample(frac=train_size, random_state=RANDOM_STATE).reset_index(drop=True)
-valid_df = train_data.drop(train_df.index).reset_index(drop=True)
+total_samples = len(train_data["labels"].values)
+num_classes = len(train_data["labels"][0])
+weights = []
+for i in range(6):
+    counts = Counter(train_data["labels"].apply(lambda x: x[i]))
+    class_samples, rest = sorted(list(map(int, counts.values())))
+    weight = total_samples / (num_classes * class_samples)
+    weights.append(round(weight, 4))
+weights = torch.tensor([weights]).to(DEVICE)
+# print(weights)
 
-print("Orig Dataset: {}".format(train_data.shape))
-print("Training Dataset: {}".format(train_df.shape))
-print("Validation Dataset: {}".format(valid_df.shape))
-
+# Tokenizer
 tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased", truncation=True, do_lower_case=True
 )
 
-label_columns = [
-    "toxic",
-    "severe_toxic",
-    "obscene",
-    "threat",
-    "insult",
-    "identity_hate",
-]
-
-# train_data["labels"] = train_data[label_columns].apply(lambda x: list(x), axis=1)
-# train_data.drop(["id"], inplace=True, axis=1)
-# train_data.drop(label_columns, inplace=True, axis=1)
 
 class MultiLabelDataset(Dataset):
     def __init__(self, dataframe, tokenizer, max_len, new_data=False):
@@ -74,6 +77,8 @@ class MultiLabelDataset(Dataset):
     def __getitem__(self, index):
         text = str(self.text[index])
         text = " ".join(text.split())
+        text = str(text).lower()
+
         inputs = self.tokenizer.encode_plus(
             text,
             None,
@@ -97,8 +102,10 @@ class MultiLabelDataset(Dataset):
 
         return out
 
-train_set = MultiLabelDataset(train_df, tokenizer, MAX_LEN)
-valid_set = MultiLabelDataset(valid_df, tokenizer, MAX_LEN)
+
+train_set = MultiLabelDataset(train_data, tokenizer, MAX_LEN)
+valid_set = MultiLabelDataset(valid_data, tokenizer, MAX_LEN)
+test_set = MultiLabelDataset(test_data, tokenizer, MAX_LEN, new_data=True)
 
 train_params = {
     "batch_size": TRAIN_BATCH_SIZE,
@@ -113,7 +120,9 @@ val_params = {
 }
 
 training_loader = DataLoader(train_set, **train_params)
-val_loader = DataLoader(valid_set, **val_params)
+valid_loader = DataLoader(valid_set, **val_params)
+test_loader = DataLoader(test_set, **val_params)
+
 
 class DistilBERTClass(torch.nn.Module):
     def __init__(self):
@@ -139,10 +148,11 @@ model.to(DEVICE)
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=LEARNING_RATE)
 
+
 def train(epoch):
     model.train()
+
     for _, data in tqdm(enumerate(training_loader, 0)):
-        print("_", _)
         ids = data["ids"].to(DEVICE, dtype=torch.long)
         mask = data["mask"].to(DEVICE, dtype=torch.long)
         token_type_ids = data["token_type_ids"].to(DEVICE, dtype=torch.long)
@@ -151,9 +161,11 @@ def train(epoch):
         outputs = model(ids, mask, token_type_ids)
 
         optimizer.zero_grad()
-        loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, targets)
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            outputs, targets, weight=weights
+        )
 
-        if _ % 4 == 0:
+        if _ % 5 == 0:
             print(f"Epoch: {epoch}, Loss:  {loss.item()}")
 
         loss.backward()
@@ -164,13 +176,8 @@ for epoch in range(EPOCHS):
     print("epoch", epoch)
     train(epoch)
 
-# TODO: test data
-test_size = 0.001
-
-test_df = test_data.sample(frac=test_size, random_state=RANDOM_STATE).reset_index(drop=True)
-test_set = MultiLabelDataset(test_data, tokenizer, MAX_LEN, new_data=True)
-test_loader = DataLoader(test_set, **val_params)
 all_test_pred = []
+
 
 def test():
     model.eval()
@@ -186,6 +193,94 @@ def test():
 
     return probas
 
+
 print("start testing")
 probas = test()
-print(probas)
+
+
+# print("probas",probas)
+def validation():
+    model.eval()
+    fin_targets = []
+    fin_outputs = []
+    with torch.no_grad():
+        for _, data in enumerate(valid_loader, 0):
+            ids = data["ids"].to(DEVICE, dtype=torch.long)
+            mask = data["mask"].to(DEVICE, dtype=torch.long)
+            token_type_ids = data["token_type_ids"].to(DEVICE, dtype=torch.long)
+            targets = data["targets"].to(DEVICE, dtype=torch.float)
+            outputs = model(ids, mask, token_type_ids)
+            fin_targets.extend(targets.cpu().detach().numpy().tolist())
+            fin_outputs.extend(torch.sigmoid(outputs).cpu().detach().numpy().tolist())
+    return fin_outputs, fin_targets
+
+
+outputs, targets = validation()
+outputs = np.array(outputs) >= 0.5
+accuracy = metrics.accuracy_score(targets, outputs)
+precision = metrics.precision_score(targets, outputs, average="weighted")
+recall = metrics.recall_score(targets, outputs, average="weighted")
+conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
+label_columns = [
+    "toxic",
+    "severe_toxic",
+    "obscene",
+    "threat",
+    "insult",
+    "identity_hate",
+]
+for i, matrix in enumerate(conf_matrix):
+    print(label_columns[i])
+    print(matrix)
+
+f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
+f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
+print(f"Accuracy Score = {accuracy}")
+print(f"precision Score = {precision}")
+print(f"recall Score = {recall}")
+print(f"F1 Score (Micro) = {f1_score_micro}")
+print(f"F1 Score (Macro) = {f1_score_macro}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument(
+        "--path",
+        help="Data path",
+        default="D:/Programming/DB's/toxic_db_for_transformert/train.csv",  # Home-PC
+        # default="D:/Programming/db's/toxicity_main/tox_train.csv",  # Work-PC
+    )
+    parser.add_argument("--n_samples", help="How many samples to pass?", default=10000)
+    # parser.add_argument(
+    #     "--tox_threshold",
+    #     help="What's a threshold for toxicity from 0.0 to 1.0?",
+    #     default=0.475,
+    # )
+    # parser.add_argument(
+    #     "--n_trials", help="How many trials for hyperparameter tuning?", default=1
+    # )
+    parser.add_argument(
+        "--type_of_run", help='"train" of "inference"?', default="train"
+    )
+    # parser.add_argument(
+    #     "--vectorizer", help='Choose "tfidf" or "spacy"', default="tfidf"
+    # )
+    parser.add_argument(
+        "--classifier_type",
+        help='Choose "logreg", "xgboost" or "lgbm"',
+        default="logreg",
+    )
+    parser.add_argument(
+        "--save_model",
+        help="Choose True or False",
+        default=False,
+    )
+    args = parser.parse_args()
+    if args.type_of_run == "train":
+        input_data = (args.path,)
+        n_samples = (args.n_samples,)
+        # tox_threshold=args.tox_threshold,
+        # n_trials=args.n_trials,
+        # vectorizer=args.vectorizer,
+        classifier_type = (args.classifier_type,)
+        save_model = (args.save_model,)
+        # classifier.train()
