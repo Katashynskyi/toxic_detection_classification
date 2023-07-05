@@ -1,10 +1,10 @@
+import argparse
+import logging as logger
 import numpy as np
 import pandas as pd
 import torch
-import argparse
-
-# import mlflow
-# from mlflow import log_artifacts, log_metric, log_param
+import mlflow
+from mlflow import log_artifacts, log_metric, log_param
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
 from transformers import DistilBertTokenizer, DistilBertModel
@@ -42,10 +42,10 @@ class TransformerModel:
         self.max_len = max_len
         self.train_batch_size = train_batch_size
         self.valid_batch_size = valid_batch_size
-        self.epochs = (epochs,)
+        self.epochs = epochs
         self.learning_rate = learning_rate
 
-    def do(self):
+    def __training_setup(self):
         # ReadPrepare train & test csv files
         rp = ReadPrepare(
             path=self.path, n_samples=self.n_samples
@@ -64,8 +64,7 @@ class TransformerModel:
             class_samples, rest = sorted(list(map(int, counts.values())))
             weight = total_samples / (num_classes * class_samples)
             weights.append(round(weight, 4))
-        weights = torch.tensor([weights]).to(DEVICE)
-        # print(weights)
+        self.weights = torch.tensor([weights]).to(DEVICE)
 
         # Tokenizer
         tokenizer = DistilBertTokenizer.from_pretrained(
@@ -131,9 +130,9 @@ class TransformerModel:
             # 'num_workers': 8
         }
 
-        training_loader = DataLoader(train_set, **train_params)
-        valid_loader = DataLoader(valid_set, **val_params)
-        test_loader = DataLoader(test_set, **val_params)
+        self.training_loader = DataLoader(train_set, **train_params)
+        self.valid_loader = DataLoader(valid_set, **val_params)
+        self.test_loader = DataLoader(test_set, **val_params)
 
         class DistilBERTClass(torch.nn.Module):
             def __init__(self):
@@ -153,99 +152,159 @@ class TransformerModel:
                 out = self.classifier(out)
                 return out
 
-        model = DistilBERTClass()
-        model.to(DEVICE)
+        self.model = DistilBERTClass().to(DEVICE)
+        self.optimizer = torch.optim.Adam(
+            params=self.model.parameters(), lr=self.learning_rate
+        )
 
-        optimizer = torch.optim.Adam(params=model.parameters(), lr=self.learning_rate)
+    def do(self):
+        """MLFlow Config"""
+        logger.info("Setting up MLFlow Config")
 
-        def train(epoch):
-            model.train()
+        mlflow.set_experiment("Toxicity_transformer_classifier")
+        """Train model and save train metrics to mlflow"""
+        with mlflow.start_run():
+            mlflow.set_tag(
+                "mlflow.runName", f"train_{mlflow.active_run().info.run_name}"
+            )
+            self.__training_setup()
+            """Train & predict"""
 
-            for _, data in tqdm(enumerate(training_loader, 0)):
-                ids = data["ids"].to(DEVICE, dtype=torch.long)
-                mask = data["mask"].to(DEVICE, dtype=torch.long)
-                token_type_ids = data["token_type_ids"].to(DEVICE, dtype=torch.long)
-                targets = data["targets"].to(DEVICE, dtype=torch.float)
-
-                outputs = model(ids, mask, token_type_ids)
-
-                optimizer.zero_grad()
-                loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                    outputs, targets, weight=weights
-                )
-
-                if _ % 5 == 0:
-                    print(f"Epoch: {epoch}, Loss:  {loss.item()}")
-
-                loss.backward()
-                optimizer.step()
-
-        for epoch in range(self.epochs):
-            print("epoch", epoch)
-            train(epoch)
-
-        all_test_pred = []
-
-        def test():
-            model.eval()
-            with torch.inference_mode():
-                for _, data in tqdm(enumerate(test_loader, 0)):
-                    ids = data["ids"].to(DEVICE, dtype=torch.long)
-                    mask = data["mask"].to(DEVICE, dtype=torch.long)
-                    token_type_ids = data["token_type_ids"].to(DEVICE, dtype=torch.long)
-                    outputs = model(ids, mask, token_type_ids)
-                    probas = torch.sigmoid(outputs)
-
-                    all_test_pred.append(probas)
-
-            return probas
-
-        print("start testing")
-        probas = test()
-        # print("probas",probas)
-
-        def validation():
-            model.eval()
-            fin_targets = []
-            fin_outputs = []
-            with torch.no_grad():
-                for _, data in enumerate(valid_loader, 0):
+            def train(epoch):
+                self.model.train()
+                fin_outputs = []
+                fin_targets = []
+                for _, data in tqdm(enumerate(self.training_loader, 0)):
                     ids = data["ids"].to(DEVICE, dtype=torch.long)
                     mask = data["mask"].to(DEVICE, dtype=torch.long)
                     token_type_ids = data["token_type_ids"].to(DEVICE, dtype=torch.long)
                     targets = data["targets"].to(DEVICE, dtype=torch.float)
-                    outputs = model(ids, mask, token_type_ids)
+                    outputs = self.model(ids, mask, token_type_ids)
+                    loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                        outputs, targets, weight=self.weights
+                    )
+
+                    if _ % 5 == 0:
+                        print(f"Epoch: {epoch}, Loss:  {loss.item()}")
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+                    # TODO: added this ↓↓↓ to get prediction of train subset
                     fin_targets.extend(targets.cpu().detach().numpy().tolist())
                     fin_outputs.extend(
                         torch.sigmoid(outputs).cpu().detach().numpy().tolist()
                     )
-            return fin_outputs, fin_targets
+                return fin_outputs, fin_targets
 
-        outputs, targets = validation()
-        outputs = np.array(outputs) >= 0.5
-        accuracy = metrics.accuracy_score(targets, outputs)
-        precision = metrics.precision_score(targets, outputs, average="weighted")
-        recall = metrics.recall_score(targets, outputs, average="weighted")
-        conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
-        label_columns = [
-            "toxic",
-            "severe_toxic",
-            "obscene",
-            "threat",
-            "insult",
-            "identity_hate",
-        ]
-        for i, matrix in enumerate(conf_matrix):
-            print(label_columns[i])
-            print(matrix)
+            for epoch in range(self.epochs):
+                print("epoch", epoch)
+                train(epoch)
+            logger.info("train is done")
+            outputs, targets = train(self.epochs)
+            outputs = np.array(outputs) >= 0.5  # threshold
 
-        f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
-        f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
-        print(f"Accuracy Score = {accuracy}")
-        print(f"precision Score = {precision}")
-        print(f"recall Score = {recall}")
-        print(f"F1 Score (Micro) = {f1_score_micro}")
-        print(f"F1 Score (Macro) = {f1_score_macro}")
+            """Compute metrics"""
+            precision = metrics.precision_score(targets, outputs, average="weighted")
+            recall = metrics.recall_score(targets, outputs, average="weighted")
+            conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
+            label_columns = [
+                "toxic",
+                "severe_toxic",
+                "obscene",
+                "threat",
+                "insult",
+                "identity_hate",
+            ]
+            f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
+            f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
+
+            """Log train metrics"""
+            # Precision
+            mlflow.log_metric("Precision", precision)
+            # Recall
+            mlflow.log_metric("Recall", recall)
+            # micro_f1
+            mlflow.log_metric("F1_micro", f1_score_micro)
+            # macro_f1
+            mlflow.log_metric("F1_macro", f1_score_macro)
+
+            for i, matrix in enumerate(conf_matrix):
+                print(label_columns[i])
+                print(matrix)
+
+        """Predict valid metrics and save to mlflow"""
+        with mlflow.start_run():
+            mlflow.set_tag(
+                "mlflow.runName", f"valid_{mlflow.active_run().info.run_name}"
+            )
+
+            def validation():
+                self.model.eval()
+                fin_outputs = []
+                fin_targets = []
+                # TODO: ???↓↓↓
+                with torch.no_grad():
+                    for _, data in enumerate(self.valid_loader, 0):
+                        ids = data["ids"].to(DEVICE, dtype=torch.long)
+                        mask = data["mask"].to(DEVICE, dtype=torch.long)
+                        token_type_ids = data["token_type_ids"].to(
+                            DEVICE, dtype=torch.long
+                        )
+                        targets = data["targets"].to(DEVICE, dtype=torch.float)
+                        outputs = self.model(ids, mask, token_type_ids)
+                        fin_targets.extend(targets.cpu().detach().numpy().tolist())
+                        fin_outputs.extend(
+                            torch.sigmoid(outputs).cpu().detach().numpy().tolist()
+                        )
+                    return fin_outputs, fin_targets
+
+            logger.info("validation is done")
+            outputs, targets = validation()
+            # TODO:??↓↓↓
+            outputs = np.array(outputs) >= 0.5  # threshold
+
+            """Compute metrics"""
+            precision = metrics.precision_score(targets, outputs, average="weighted")
+            recall = metrics.recall_score(targets, outputs, average="weighted")
+            conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
+            label_columns = [
+                "toxic",
+                "severe_toxic",
+                "obscene",
+                "threat",
+                "insult",
+                "identity_hate",
+            ]
+            f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
+            f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
+
+            """Log valid metrics"""
+            # Precision
+            mlflow.log_metric("Precision", float(precision))
+            # Recall
+            mlflow.log_metric("Recall", recall)
+            # micro_f1
+            mlflow.log_metric("F1_micro", f1_score_micro)
+            # macro_f1
+            mlflow.log_metric("F1_macro", f1_score_macro)
+
+        # TODO: """Test???"""
+        # all_test_pred = []
+        # def test():
+        #     self.model.eval()
+        #     with torch.inference_mode():
+        #         for _, data in tqdm(enumerate(self.test_loader, 0)):
+        #             ids = data["ids"].to(DEVICE, dtype=torch.long)
+        #             mask = data["mask"].to(DEVICE, dtype=torch.long)
+        #             token_type_ids = data["token_type_ids"].to(DEVICE, dtype=torch.long)
+        #             outputs = self.model(ids, mask, token_type_ids)
+        #             probas = torch.sigmoid(outputs)
+        #             all_test_pred.append(probas)
+        #
+        #     return probas
+
+        # probas = test()
+        # print("probas",probas)
 
 
 if __name__ == "__main__":
@@ -256,8 +315,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path",
         help="Data path",
-        # default="D:/Programming/DB's/toxic_db_for_transformert/train.csv",  # Home-PC
-        default="D:/Programming/db's/toxicity_kaggle_1/train.csv",  # Work-PC
+        default="D:/Programming/DB's/toxic_db_for_transformert/train.csv",  # Home-PC
+        # default="D:/Programming/db's/toxicity_kaggle_1/train.csv",  # Work-PC
     )
     parser.add_argument(
         "--random_state", help="Choose seed for random state", default=42
@@ -271,9 +330,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--train_batch_size", help="Train batch size", default=16)
     parser.add_argument("--valid_batch_size", help="Valid batch size", default=16)
-    parser.add_argument("--epochs", help="Number of epochs", default=3)
+    parser.add_argument("--epochs", help="Number of epochs", default=1)
     parser.add_argument("--learning_rate", help="Learning rate", default=1e-05)
-    parser.add_argument("--n_samples", help="How many samples to pass?", default=10000)
+    parser.add_argument("--n_samples", help="How many samples to pass?", default=600)
     args = parser.parse_args()
     if args.type_of_run == "train":
         classifier = TransformerModel(
