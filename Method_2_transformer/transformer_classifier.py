@@ -12,6 +12,8 @@ from src.utils.utils import Split, ReadPrepare
 from sklearn import metrics
 import warnings
 from collections import Counter
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
@@ -116,7 +118,9 @@ class TransformerModel:
 
         train_set = MultiLabelDataset(train_data, tokenizer, self.max_len)
         valid_set = MultiLabelDataset(valid_data, tokenizer, self.max_len)
-        test_set = MultiLabelDataset(test_data, tokenizer, self.max_len, new_data=True)
+        test_set = MultiLabelDataset(
+            test_data, tokenizer, self.max_len
+        )  # , new_data=True)
 
         train_params = {
             "batch_size": self.train_batch_size,
@@ -189,7 +193,6 @@ class TransformerModel:
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
-                    # TODO: added this ↓↓↓ to get prediction of train subset
                     fin_targets.extend(targets.cpu().detach().numpy().tolist())
                     fin_outputs.extend(
                         torch.sigmoid(outputs).cpu().detach().numpy().tolist()
@@ -203,34 +206,52 @@ class TransformerModel:
             outputs, targets = train(self.epochs)
             outputs = np.array(outputs) >= 0.5  # threshold
 
-            """Compute metrics"""
-            precision = metrics.precision_score(targets, outputs, average="weighted")
-            recall = metrics.recall_score(targets, outputs, average="weighted")
-            conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
+            """Compute train metrics"""
+            train_precision = metrics.precision_score(
+                targets, outputs, average="weighted"
+            )
+            train_recall = metrics.recall_score(targets, outputs, average="weighted")
+            train_conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
+            train_f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
+            train_f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
             label_columns = [
-                "toxic",
-                "severe_toxic",
-                "obscene",
-                "threat",
-                "insult",
-                "identity_hate",
+                "train_toxic",
+                "train_severe_toxic",
+                "train_obscene",
+                "train_threat",
+                "train_insult",
+                "train_identity_hate",
             ]
-            f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
-            f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
+            for i, matrix in enumerate(train_conf_matrix):
+                print(label_columns[i])
+                print(matrix)
+
+            # conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
+            # label_names = label_columns
+
+            # visualization
+            # for i, matrix in enumerate(conf_matrix):
+            #     plt.figure()
+            #     sns.heatmap(matrix, annot=True, fmt="d", cmap="Blues")
+            #     plt.title(f"Confusion Matrix - {label_columns[i]}")
+            #     plt.xlabel("Predicted")
+            #     plt.ylabel("Actual")
+            #     plt.savefig(f"conf_matrix_{i}.png")  # Save as PNG file
+            #     plt.close()
+            #
+            #     with open(f"conf_matrix_{i}.png", "rb") as file:
+            #         mlflow.log_artifact("file", artifact_path=f"confusion_matrix_{i}")
+            # mlflow.log_artifact('file.png')
 
             """Log train metrics"""
             # Precision
-            mlflow.log_metric("Precision", precision)
+            mlflow.log_metric("Precision", train_precision)
             # Recall
-            mlflow.log_metric("Recall", recall)
+            mlflow.log_metric("Recall", train_recall)
             # micro_f1
-            mlflow.log_metric("F1_micro", f1_score_micro)
+            mlflow.log_metric("F1_micro", train_f1_score_micro)
             # macro_f1
-            mlflow.log_metric("F1_macro", f1_score_macro)
-
-            for i, matrix in enumerate(conf_matrix):
-                print(label_columns[i])
-                print(matrix)
+            mlflow.log_metric("F1_macro", train_f1_score_macro)
 
         """Predict valid metrics and save to mlflow"""
         with mlflow.start_run():
@@ -242,7 +263,6 @@ class TransformerModel:
                 self.model.eval()
                 fin_outputs = []
                 fin_targets = []
-                # TODO: ???↓↓↓
                 with torch.no_grad():
                     for _, data in enumerate(self.valid_loader, 0):
                         ids = data["ids"].to(DEVICE, dtype=torch.long)
@@ -258,25 +278,27 @@ class TransformerModel:
                         )
                     return fin_outputs, fin_targets
 
-            logger.info("validation is done")
             outputs, targets = validation()
-            # TODO:??↓↓↓
             outputs = np.array(outputs) >= 0.5  # threshold
+            logger.info("validation is done")
 
             """Compute metrics"""
             precision = metrics.precision_score(targets, outputs, average="weighted")
             recall = metrics.recall_score(targets, outputs, average="weighted")
             conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
-            label_columns = [
-                "toxic",
-                "severe_toxic",
-                "obscene",
-                "threat",
-                "insult",
-                "identity_hate",
-            ]
             f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
             f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
+            label_columns = [
+                "valid_toxic",
+                "valid_severe_toxic",
+                "valid_obscene",
+                "valid_threat",
+                "valid_insult",
+                "valid_identity_hate",
+            ]
+            for i, matrix in enumerate(conf_matrix):
+                print(label_columns[i])
+                print(matrix)
 
             """Log valid metrics"""
             # Precision
@@ -288,23 +310,62 @@ class TransformerModel:
             # macro_f1
             mlflow.log_metric("F1_macro", f1_score_macro)
 
-        # TODO: """Test???"""
-        # all_test_pred = []
-        # def test():
-        #     self.model.eval()
-        #     with torch.inference_mode():
-        #         for _, data in tqdm(enumerate(self.test_loader, 0)):
-        #             ids = data["ids"].to(DEVICE, dtype=torch.long)
-        #             mask = data["mask"].to(DEVICE, dtype=torch.long)
-        #             token_type_ids = data["token_type_ids"].to(DEVICE, dtype=torch.long)
-        #             outputs = self.model(ids, mask, token_type_ids)
-        #             probas = torch.sigmoid(outputs)
-        #             all_test_pred.append(probas)
-        #
-        #     return probas
+        """Predict test metrics and save to mlflow"""
+        with mlflow.start_run():
+            mlflow.set_tag(
+                "mlflow.runName", f"test_{mlflow.active_run().info.run_name}"
+            )
 
-        # probas = test()
-        # print("probas",probas)
+            def test():
+                self.model.eval()
+                fin_outputs = []
+                fin_targets = []
+                with torch.inference_mode():
+                    for _, data in enumerate(self.test_loader, 0):
+                        ids = data["ids"].to(DEVICE, dtype=torch.long)
+                        mask = data["mask"].to(DEVICE, dtype=torch.long)
+                        token_type_ids = data["token_type_ids"].to(
+                            DEVICE, dtype=torch.long
+                        )
+                        targets = data["targets"].to(DEVICE, dtype=torch.float)
+                        outputs = self.model(ids, mask, token_type_ids)
+                        fin_targets.extend(targets.cpu().detach().numpy().tolist())
+                        fin_outputs.extend(
+                            torch.sigmoid(outputs).cpu().detach().numpy().tolist()
+                        )
+                    return fin_outputs, fin_targets
+
+            outputs, targets = test()
+            outputs = np.array(outputs) >= 0.5  # threshold
+            logger.info("test is done")
+
+            """Compute metrics"""
+            precision = metrics.precision_score(targets, outputs, average="weighted")
+            recall = metrics.recall_score(targets, outputs, average="weighted")
+            conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
+            f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
+            f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
+            label_columns = [
+                "test_toxic",
+                "test_severe_toxic",
+                "test_obscene",
+                "test_threat",
+                "test_insult",
+                "test_identity_hate",
+            ]
+            for i, matrix in enumerate(conf_matrix):
+                print(label_columns[i])
+                print(matrix)
+
+            """Log test metrics"""
+            # Precision
+            mlflow.log_metric("Precision", float(precision))
+            # Recall
+            mlflow.log_metric("Recall", recall)
+            # micro_f1
+            mlflow.log_metric("F1_micro", f1_score_micro)
+            # macro_f1
+            mlflow.log_metric("F1_macro", f1_score_macro)
 
 
 if __name__ == "__main__":
@@ -315,8 +376,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path",
         help="Data path",
-        default="D:/Programming/DB's/toxic_db_for_transformert/train.csv",  # Home-PC
-        # default="D:/Programming/db's/toxicity_kaggle_1/train.csv",  # Work-PC
+        # default="D:/Programming/DB's/toxic_db_for_transformert/train.csv",  # Home-PC
+        default="D:/Programming/db's/toxicity_kaggle_1/train.csv",  # Work-PC
     )
     parser.add_argument(
         "--random_state", help="Choose seed for random state", default=42
@@ -325,14 +386,14 @@ if __name__ == "__main__":
         # TODO: ???
         "--max_len",
         help="Max lenght of ???",
-        default=100  # home_PC
+        default=128  # home_PC
         # default=512 # work_PC
     )
     parser.add_argument("--train_batch_size", help="Train batch size", default=16)
     parser.add_argument("--valid_batch_size", help="Valid batch size", default=16)
-    parser.add_argument("--epochs", help="Number of epochs", default=1)
+    parser.add_argument("--epochs", help="Number of epochs", default=5)
     parser.add_argument("--learning_rate", help="Learning rate", default=1e-05)
-    parser.add_argument("--n_samples", help="How many samples to pass?", default=600)
+    parser.add_argument("--n_samples", help="How many samples to pass?", default=100000)
     args = parser.parse_args()
     if args.type_of_run == "train":
         classifier = TransformerModel(
