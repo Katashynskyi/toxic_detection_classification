@@ -6,9 +6,11 @@ import torch
 import mlflow
 from mlflow import log_artifacts, log_metric, log_param
 from tqdm import tqdm
-from torch.utils.data import Dataset, DataLoader
-from transformers import DistilBertTokenizer, DistilBertModel
+from torch.utils.data import DataLoader
+from transformers import DistilBertTokenizer
 from src.utils.utils import Split, ReadPrepare
+from src.utils.utils_2 import MultiLabelDataset, DistilBERTClass
+
 from sklearn import metrics
 import warnings
 from collections import Counter
@@ -21,22 +23,23 @@ desired_width = 1000
 pd.set_option("display.width", desired_width)
 pd.set_option("display.max_columns", 100)
 
-
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(DEVICE)
 
 
 class TransformerModel:
     def __init__(
-        self,
-        path,
-        n_samples,
-        random_state,
-        max_len,
-        train_batch_size,
-        valid_batch_size,
-        epochs,
-        learning_rate,
+            self,
+            path,
+            n_samples,
+            random_state,
+            max_len,
+            train_batch_size,
+            valid_batch_size,
+            epochs,
+            learning_rate,
+            threshold,
+            num_classes
     ):
         self.path = path
         self.n_samples = n_samples
@@ -46,12 +49,15 @@ class TransformerModel:
         self.valid_batch_size = valid_batch_size
         self.epochs = epochs
         self.learning_rate = learning_rate
+        self.threshold = threshold
+        self.num_classes=num_classes
 
     def __training_setup(self):
         # ReadPrepare train & test csv files
         rp = ReadPrepare(
             path=self.path, n_samples=self.n_samples
         ).data_process()  # csv -> pd.DataFrame
+
         # Split df on train & valid & test
         splitter = Split(df=rp, test_size=0.3)
         train_data = splitter.get_train_data().reset_index()  # -> pd.DataFrame
@@ -60,6 +66,8 @@ class TransformerModel:
 
         total_samples = len(train_data["labels"].values)
         num_classes = len(train_data["labels"][0])
+
+        # Setup formula four weights
         weights = []
         for i in range(6):
             counts = Counter(train_data["labels"].apply(lambda x: x[i]))
@@ -73,49 +81,7 @@ class TransformerModel:
             "distilbert-base-uncased", truncation=True, do_lower_case=True
         )
 
-        class MultiLabelDataset(Dataset):
-            def __init__(self, dataframe, tokenizer, max_len, new_data=False):
-                self.dataframe = dataframe
-                self.tokenizer = tokenizer
-                self.text = dataframe.comment_text
-                self.new_data = new_data
-                if not new_data:
-                    self.targets = self.dataframe.labels
-                self.max_len = max_len
-
-            def __len__(self):
-                return len(self.text)
-
-            def __getitem__(self, index):
-                text = str(self.text[index])
-                text = " ".join(text.split())
-                text = str(text).lower()
-
-                inputs = self.tokenizer.encode_plus(
-                    text,
-                    None,
-                    add_special_tokens=True,
-                    max_length=self.max_len,
-                    pad_to_max_length=True,
-                    return_token_type_ids=True,
-                )
-                ids = inputs["input_ids"]
-                mask = inputs["attention_mask"]
-                token_type_ids = inputs["token_type_ids"]
-
-                out = {
-                    "ids": torch.tensor(ids, dtype=torch.long),
-                    "mask": torch.tensor(mask, dtype=torch.long),
-                    "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
-                }
-
-                if not self.new_data:
-                    out["targets"] = torch.tensor(
-                        self.targets[index], dtype=torch.float
-                    )
-
-                return out
-
+        # Custom pytorch datasets
         train_set = MultiLabelDataset(train_data, tokenizer, self.max_len)
         valid_set = MultiLabelDataset(valid_data, tokenizer, self.max_len)
         test_set = MultiLabelDataset(
@@ -133,39 +99,20 @@ class TransformerModel:
             "shuffle": False,
             # 'num_workers': 8
         }
-
+        # Iterators of datasets
         self.training_loader = DataLoader(train_set, **train_params)
         self.valid_loader = DataLoader(valid_set, **val_params)
         self.test_loader = DataLoader(test_set, **val_params)
-
-        class DistilBERTClass(torch.nn.Module):
-            def __init__(self):
-                super(DistilBERTClass, self).__init__()
-                self.bert = DistilBertModel.from_pretrained("distilbert-base-uncased")
-                self.classifier = torch.nn.Sequential(
-                    torch.nn.Linear(768, 768),
-                    torch.nn.ReLU(),
-                    torch.nn.Dropout(0.1),
-                    torch.nn.Linear(768, 6),
-                )
-
-            def forward(self, input_ids, attention_mask, token_type_ids):
-                output_1 = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-                hidden_state = output_1[0]
-                out = hidden_state[:, 0]
-                out = self.classifier(out)
-                return out
-
-        self.model = DistilBERTClass().to(DEVICE)
+        # Init model
+        self.model = DistilBERTClass(num_classes=self.num_classes).to(DEVICE)
+        # Optimizer
         self.optimizer = torch.optim.Adam(
             params=self.model.parameters(), lr=self.learning_rate
         )
 
-    def do(self):
-        """MLFlow Config"""
-        logger.info("Setting up MLFlow Config")
-
+    def train(self):
         mlflow.set_experiment("Toxicity_transformer_classifier")
+
         """Train model and save train metrics to mlflow"""
         with mlflow.start_run():
             mlflow.set_tag(
@@ -174,7 +121,7 @@ class TransformerModel:
             self.__training_setup()
             """Train & predict"""
 
-            def train(epoch):
+            def run_train(epoch):
                 self.model.train()
                 fin_outputs = []
                 fin_targets = []
@@ -187,7 +134,6 @@ class TransformerModel:
                     loss = torch.nn.functional.binary_cross_entropy_with_logits(
                         outputs, targets, weight=self.weights
                     )
-
                     if _ % 5 == 0:
                         print(f"Epoch: {epoch}, Loss:  {loss.item()}")
                     self.optimizer.zero_grad()
@@ -201,10 +147,10 @@ class TransformerModel:
 
             for epoch in range(self.epochs):
                 print("epoch", epoch)
-                train(epoch)
+                run_train(epoch)
             logger.info("train is done")
-            outputs, targets = train(self.epochs)
-            outputs = np.array(outputs) >= 0.5  # threshold
+            outputs, targets = run_train(self.epochs)
+            outputs = np.array(outputs) >= self.threshold  # threshold
 
             """Compute train metrics"""
             train_precision = metrics.precision_score(
@@ -253,13 +199,21 @@ class TransformerModel:
             # macro_f1
             mlflow.log_metric("F1_macro", train_f1_score_macro)
 
+            """Log hyperparams"""
+            mlflow.log_param("n_samples", self.n_samples)
+            mlflow.log_param("epochs", self.epochs)
+            mlflow.log_param("threshold", self.threshold)
+            mlflow.log_param("max_len", self.max_len)
+            mlflow.log_param("learning_rate", self.learning_rate)
+            mlflow.log_param("weights", self.weights)
+
         """Predict valid metrics and save to mlflow"""
         with mlflow.start_run():
             mlflow.set_tag(
                 "mlflow.runName", f"valid_{mlflow.active_run().info.run_name}"
             )
 
-            def validation():
+            def run_validation():
                 self.model.eval()
                 fin_outputs = []
                 fin_targets = []
@@ -278,8 +232,8 @@ class TransformerModel:
                         )
                     return fin_outputs, fin_targets
 
-            outputs, targets = validation()
-            outputs = np.array(outputs) >= 0.5  # threshold
+            outputs, targets = run_validation()
+            outputs = np.array(outputs) >= self.threshold  # threshold
             logger.info("validation is done")
 
             """Compute metrics"""
@@ -316,7 +270,7 @@ class TransformerModel:
                 "mlflow.runName", f"test_{mlflow.active_run().info.run_name}"
             )
 
-            def test():
+            def run_test():
                 self.model.eval()
                 fin_outputs = []
                 fin_targets = []
@@ -335,8 +289,8 @@ class TransformerModel:
                         )
                     return fin_outputs, fin_targets
 
-            outputs, targets = test()
-            outputs = np.array(outputs) >= 0.5  # threshold
+            outputs, targets = run_test()
+            outputs = np.array(outputs) >= self.threshold  # threshold
             logger.info("test is done")
 
             """Compute metrics"""
@@ -391,9 +345,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--train_batch_size", help="Train batch size", default=16)
     parser.add_argument("--valid_batch_size", help="Valid batch size", default=16)
-    parser.add_argument("--epochs", help="Number of epochs", default=5)
-    parser.add_argument("--learning_rate", help="Learning rate", default=1e-05)
-    parser.add_argument("--n_samples", help="How many samples to pass?", default=100000)
+    parser.add_argument("--epochs", help="Number of epochs", default=0)
+    parser.add_argument("--learning_rate", help="Learning rate", default=1e-05)  # 0.001, 0.005, 0.01, 0.05, 0.1
+    parser.add_argument("--n_samples", help="How many samples to pass?", default=600)
+    parser.add_argument("--threshold", help="What's the threshold for toxicity?", default=0.5)
+    parser.add_argument("--num_classes", help="Choose number of classes to predict", default=6)
     args = parser.parse_args()
     if args.type_of_run == "train":
         classifier = TransformerModel(
@@ -405,6 +361,8 @@ if __name__ == "__main__":
             valid_batch_size=args.valid_batch_size,
             epochs=args.epochs,
             learning_rate=args.learning_rate,
+            threshold=args.threshold,
+            num_classes=args.num_classes
         )
 
-        classifier.do()
+        classifier.train()
