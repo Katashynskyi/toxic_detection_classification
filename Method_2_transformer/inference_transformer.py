@@ -322,36 +322,82 @@ class TransformerModel:
             mlflow.log_metric("F1_macro", f1_score_macro)
 
 
+    def inference(self):
+        def __training_setup(self):
+            # ReadPrepare train & test csv files
+            rp = ReadPrepare(
+                path=self.path, n_samples=self.n_samples
+            ).data_process()  # csv -> pd.DataFrame
+
+            # Split df on train & valid & test
+            #splitter = Split(df=rp, test_size=0.3)
+            # get data from df
+            test_data = splitter.get_test_data().reset_index()  # -> pd.DataFrame
+
+            # total_samples = len(train_data["labels"].values)
+
+
+
+            # Tokenizer
+            # read from output model from train
+            tokenizer = DistilBertTokenizer.from_pretrained(
+                "distilbert-base-uncased", truncation=True, do_lower_case=True
+            )
+
+            # Custom pytorch datasets
+            test_set = MultiLabelDataset(
+                test_data, tokenizer, self.max_len
+            )  # , new_data=True)
+
+
+            test_params = {
+                "batch_size": self.test_batch_size,
+                "shuffle": False,
+                # 'num_workers': 8
+            }
+            # Iterators of datasets
+            self.test_loader = DataLoader(test_set, **test_params)
+            # Init model
+            self.model = DistilBERTClass(num_classes=self.num_classes).to(DEVICE)
+            # Optimizer
+
+
+        def train(self):
+            mlflow.set_experiment("Toxicity_transformer_classifier")
+
+
+            """Predict test metrics and save to mlflow"""
+
+            def run_test():
+                self.model.eval()
+                fin_outputs = []
+                with torch.inference_mode():
+                    for _, data in enumerate(self.test_loader, 0):
+                        ids = data["ids"].to(DEVICE, dtype=torch.long)
+                        mask = data["mask"].to(DEVICE, dtype=torch.long)
+                        token_type_ids = data["token_type_ids"].to(
+                            DEVICE, dtype=torch.long
+                        )
+
+                        outputs = self.model(ids, mask, token_type_ids)
+
+                        fin_outputs.extend(
+                            torch.sigmoid(outputs).cpu().detach().numpy().tolist()
+                        )
+                    return fin_outputs
+
+            outputs = run_test()
+            outputs = np.array(outputs) >= self.threshold  # threshold
+            logger.info("test is done")
+
+            return outputs
+
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="")
-    parser.add_argument(
-        "--type_of_run", help='"train" of "inference"?', default="train"
-    )
-    parser.add_argument(
-        "--path",
-        help="Data path",
-        default="D:/Programming/DB's/toxic_db_for_transformert/train.csv",  # Home-PC
-        # default="D:/Programming/db's/toxicity_kaggle_1/train.csv",  # Work-PC
-    )
-    parser.add_argument(
-        "--random_state", help="Choose seed for random state", default=42
-    )
-    parser.add_argument(
-        # TODO: ???
-        "--max_len",
-        help="Max lenght of ???",
-        default=128  # home_PC
-        # default=512 # work_PC
-    )
-    parser.add_argument("--train_batch_size", help="Train batch size", default=16)
-    parser.add_argument("--valid_batch_size", help="Valid batch size", default=16)
-    parser.add_argument("--epochs", help="Number of epochs", default=0)
-    parser.add_argument("--learning_rate", help="Learning rate", default=1e-05)  # 0.001, 0.005, 0.01, 0.05, 0.1
-    parser.add_argument("--n_samples", help="How many samples to pass?", default=600)
-    parser.add_argument("--threshold", help="What's the threshold for toxicity?", default=0.5)
-    parser.add_argument("--num_classes", help="Choose number of classes to predict", default=6)
-    args = parser.parse_args()
-    if args.type_of_run == "train":
+
+
+
         classifier = TransformerModel(
             path=args.path,
             n_samples=args.n_samples,
