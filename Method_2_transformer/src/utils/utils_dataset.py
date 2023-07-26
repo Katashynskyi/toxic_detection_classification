@@ -1,6 +1,5 @@
 import torch
-from torch.utils.data import Dataset, DataLoader
-from transformers import DistilBertModel
+from torch.utils.data import Dataset
 
 
 class MultiLabelDataset(Dataset):
@@ -40,28 +39,6 @@ class MultiLabelDataset(Dataset):
         }
 
         if not self.new_data:
-            out["targets"] = torch.tensor(
-                self.targets[index], dtype=torch.float
-            )
+            out["targets"] = torch.tensor(self.targets[index], dtype=torch.float)
 
         return out
-
-
-class DistilBERTClass(torch.nn.Module):
-    def __init__(self,num_classes=6):
-        super(DistilBERTClass, self).__init__()
-        self.bert = DistilBertModel.from_pretrained("distilbert-base-uncased")
-        self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(768, 768),
-            torch.nn.ReLU(),
-            torch.nn.Dropout(0.1),
-            torch.nn.Linear(768, num_classes),
-        )
-
-    def forward(self, input_ids, attention_mask, token_type_ids):
-        output_1 = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        hidden_state = output_1[0]
-        out = hidden_state[:, 0]
-        out = self.classifier(out)
-        return out
-

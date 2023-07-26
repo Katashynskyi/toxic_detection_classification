@@ -9,7 +9,7 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import DistilBertTokenizer
 from src.utils.utils import Split, ReadPrepare
-from src.utils.utils_2 import MultiLabelDataset, DistilBERTClass
+from src.utils.utils_bert import MultiLabelDataset, DistilBERTClass
 
 from sklearn import metrics
 import warnings
@@ -29,17 +29,17 @@ print(DEVICE)
 
 class TransformerModel:
     def __init__(
-            self,
-            path,
-            n_samples,
-            random_state,
-            max_len,
-            train_batch_size,
-            valid_batch_size,
-            epochs,
-            learning_rate,
-            threshold,
-            num_classes
+        self,
+        path,
+        n_samples,
+        random_state,
+        max_len,
+        train_batch_size,
+        valid_batch_size,
+        epochs,
+        learning_rate,
+        threshold,
+        num_classes,
     ):
         self.path = path
         self.n_samples = n_samples
@@ -50,7 +50,7 @@ class TransformerModel:
         self.epochs = epochs
         self.learning_rate = learning_rate
         self.threshold = threshold
-        self.num_classes=num_classes
+        self.num_classes = num_classes
 
     def __training_setup(self):
         # ReadPrepare train & test csv files
@@ -187,7 +187,7 @@ class TransformerModel:
 
                 with open(f"conf_matrix_{i}.png", "rb") as file:
                     mlflow.log_artifact("file", artifact_path=f"confusion_matrix_{i}")
-            mlflow.log_artifact('file.png')
+            mlflow.log_artifact("file.png")
 
             """Log train metrics"""
             # Precision
@@ -321,7 +321,6 @@ class TransformerModel:
             # macro_f1
             mlflow.log_metric("F1_macro", f1_score_macro)
 
-
     def inference(self):
         def __training_setup(self):
             # ReadPrepare train & test csv files
@@ -330,13 +329,11 @@ class TransformerModel:
             ).data_process()  # csv -> pd.DataFrame
 
             # Split df on train & valid & test
-            #splitter = Split(df=rp, test_size=0.3)
+            # splitter = Split(df=rp, test_size=0.3)
             # get data from df
             test_data = splitter.get_test_data().reset_index()  # -> pd.DataFrame
 
             # total_samples = len(train_data["labels"].values)
-
-
 
             # Tokenizer
             # read from output model from train
@@ -349,7 +346,6 @@ class TransformerModel:
                 test_data, tokenizer, self.max_len
             )  # , new_data=True)
 
-
             test_params = {
                 "batch_size": self.test_batch_size,
                 "shuffle": False,
@@ -361,10 +357,8 @@ class TransformerModel:
             self.model = DistilBERTClass(num_classes=self.num_classes).to(DEVICE)
             # Optimizer
 
-
         def train(self):
             mlflow.set_experiment("Toxicity_transformer_classifier")
-
 
             """Predict test metrics and save to mlflow"""
 
@@ -393,22 +387,18 @@ class TransformerModel:
             return outputs
 
 
-
 if __name__ == "__main__":
+    classifier = TransformerModel(
+        path=args.path,
+        n_samples=args.n_samples,
+        random_state=args.random_state,
+        max_len=args.max_len,
+        train_batch_size=args.train_batch_size,
+        valid_batch_size=args.valid_batch_size,
+        epochs=args.epochs,
+        learning_rate=args.learning_rate,
+        threshold=args.threshold,
+        num_classes=args.num_classes,
+    )
 
-
-
-        classifier = TransformerModel(
-            path=args.path,
-            n_samples=args.n_samples,
-            random_state=args.random_state,
-            max_len=args.max_len,
-            train_batch_size=args.train_batch_size,
-            valid_batch_size=args.valid_batch_size,
-            epochs=args.epochs,
-            learning_rate=args.learning_rate,
-            threshold=args.threshold,
-            num_classes=args.num_classes
-        )
-
-        classifier.train()
+    classifier.train()

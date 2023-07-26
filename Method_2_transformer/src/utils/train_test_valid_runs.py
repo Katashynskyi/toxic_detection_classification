@@ -40,7 +40,5 @@ def run_train(epoch):
         loss.backward()
         self.optimizer.step()
         fin_targets.extend(targets.cpu().detach().numpy().tolist())
-        fin_outputs.extend(
-            torch.sigmoid(outputs).cpu().detach().numpy().tolist()
-        )
+        fin_outputs.extend(torch.sigmoid(outputs).cpu().detach().numpy().tolist())
     return fin_outputs, fin_targets
