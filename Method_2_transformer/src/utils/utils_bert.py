@@ -21,7 +21,7 @@ class DistilBERTClass(torch.nn.Module):
         out = self.classifier(out)
         return out
 
-    def __save(
+    def _save(
         self, filepath="model/model_weights.pth", epoch=None, model=None, optimizer=None
     ):
         """return 800 mb pth file"""

@@ -4,19 +4,23 @@ import numpy as np
 import pandas as pd
 import torch
 import mlflow
-from mlflow import log_artifacts, log_metric, log_param
+
+# from mlflow import log_artifacts, log_metric, log_param
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import DistilBertTokenizer
 from src.utils.utils import Split, ReadPrepare
 from src.utils.utils_bert import DistilBERTClass
 from src.utils.utils_dataset import MultiLabelDataset
+from src.utils.utils_metrics import log_metrics
+from src.utils.train_test_valid_runs import RunTrainValidTest
 
-from sklearn import metrics
+# from sklearn import metrics
 import warnings
 from collections import Counter
-import seaborn as sns
-import matplotlib.pyplot as plt
+
+# import seaborn as sns
+# import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
@@ -54,6 +58,9 @@ class TransformerModel:
         self.num_classes = num_classes
 
     def __training_setup(self):
+        """hidden method to prepare dataset.
+        split it, prepare weights formula, initialize tokenizer, transform to custom pytorch datasets
+        """
         # ReadPrepare train & test csv files
         rp = ReadPrepare(
             path=self.path, n_samples=self.n_samples
@@ -112,106 +119,58 @@ class TransformerModel:
         )
 
     def train(self):
+        """method to train data"""
+        self.__training_setup()
+        """Train"""
+        for epoch in range(self.epochs):
+            print("epoch", epoch)
+            RunTrainValidTest(
+                model=self.model,
+                loader=self.training_loader,
+                weights=self.weights,
+                optimizer=self.optimizer,
+            ).run_train(epoch)
+        outputs, self.train_targets = RunTrainValidTest(
+            model=self.model,
+            loader=self.training_loader,
+            weights=self.weights,
+            optimizer=self.optimizer,
+        ).run_train(epoch=self.epochs)
+
+        """Toxicity threshold"""
+        self.train_outputs = np.array(outputs) >= self.threshold
+
+        """Save model"""
+        # self.model._save(
+        #     epoch=self.epochs, model=self.model, optimizer=self.optimizer
+        # )  # TODO: should we save with ability to train again???
+        self.model.save()
+
+        """Evaluate"""
+        outputs, self.valid_targets = RunTrainValidTest(
+            model=self.model, loader=self.valid_loader, optimizer=self.optimizer
+        ).run_validation()
+        self.valid_outputs = np.array(outputs) >= self.threshold  # threshold
+
+    def predict(self):
+        """Method to predict test data"""
+        outputs, self.test_targets = RunTrainValidTest(
+            model=self.model, loader=self.test_loader, optimizer=self.optimizer
+        ).run_test()
+
+        self.test_outputs = np.array(outputs) >= self.threshold  # threshold
+
+    def evaluate(self):
+        """method to evaluate and log train, valid, test subsample metrics"""
         mlflow.set_experiment("Toxicity_transformer_classifier")
 
-        """Train model and save train metrics to mlflow"""
+        """Evaluate and log train metrics, log hyperparams to mlflow"""
         with mlflow.start_run():
             mlflow.set_tag(
                 "mlflow.runName", f"train_{mlflow.active_run().info.run_name}"
             )
-            self.__training_setup()
-            """Train & predict"""
-
-            def run_train(epoch):
-                self.model.train()
-                fin_outputs = []
-                fin_targets = []
-                for _, data in tqdm(enumerate(self.training_loader, 0)):
-                    ids = data["ids"].to(DEVICE, dtype=torch.long)
-                    mask = data["mask"].to(DEVICE, dtype=torch.long)
-                    token_type_ids = data["token_type_ids"].to(DEVICE, dtype=torch.long)
-                    targets = data["targets"].to(DEVICE, dtype=torch.float)
-                    outputs = self.model(ids, mask, token_type_ids)
-                    loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                        outputs, targets, weight=self.weights
-                    )
-                    if _ % 5 == 0:
-                        print(f"Epoch: {epoch}, Loss:  {loss.item()}")
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
-                    fin_targets.extend(targets.cpu().detach().numpy().tolist())
-                    fin_outputs.extend(
-                        torch.sigmoid(outputs).cpu().detach().numpy().tolist()
-                    )
-                return fin_outputs, fin_targets
-
-            def save():
-                # TODO: ↓↓↓
-                # self.model.__save(epoch=self.epochs,model=self.model,optimizer=self.optimizer)
-                self.model.save()
-
-            for epoch in range(self.epochs):
-                print("epoch", epoch)
-                run_train(epoch)
-
-            logger.info("model saved")
-            logger.info("train is done")
-
-            outputs, targets = run_train(self.epochs)
-
-            """Save model"""
-            save()
-
-            """Toxicity threshold"""
-            outputs = np.array(outputs) >= self.threshold
-
-            """Compute train metrics"""
-            train_precision = metrics.precision_score(
-                targets, outputs, average="weighted"
-            )
-            train_recall = metrics.recall_score(targets, outputs, average="weighted")
-            train_conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
-            train_f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
-            train_f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
-            label_columns = [
-                "train_toxic",
-                "train_severe_toxic",
-                "train_obscene",
-                "train_threat",
-                "train_insult",
-                "train_identity_hate",
-            ]
-            for i, matrix in enumerate(train_conf_matrix):
-                print(label_columns[i])
-                print(matrix)
-            # targets=[[0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 1.0, 0.0, 1.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
-            # outputs=[[False  True  True  True  True False], [False  True  True  True  True False], [False  True  True  True  True False], ..., [False False False False False False], [False False False False False False], [False False False False  True False]]
-            # targets=[[0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
-            # outputs=[[False, True, True,  True,  True, False], [False,  True,  True,  True,  True, False], [False,  True,  True,  True,  True, False]]
-            # # visualization
-            # conf_matrix = metrics.confusion_matrix(targets, outputs)
-            # label_names = label_columns
-            # cm_df = pd.DataFrame(conf_matrix, index=label_names, columns=label_names)
-            # print(cm_df)
-
-            # # Plot the heatmap
-            # plt.figure(figsize=(8, 6))
-            # sns.heatmap(cm_df, annot=True, cmap='Blues')
-            # plt.title('Confusion Matrix - Toxicity type dataset')
-            # plt.xlabel('Predicted')
-            # plt.ylabel('True')
-            # plt.show()
-
-            """Log train metrics"""
-            # Precision
-            mlflow.log_metric("Precision", train_precision)
-            # Recall
-            mlflow.log_metric("Recall", train_recall)
-            # micro_f1
-            mlflow.log_metric("F1_micro", train_f1_score_micro)
-            # macro_f1
-            mlflow.log_metric("F1_macro", train_f1_score_macro)
+            """"Evaluate and log train metrics"""
+            log_metrics(self.train_targets, self.train_outputs)
 
             """Log hyperparams"""
             mlflow.log_param("n_samples", self.n_samples)
@@ -221,127 +180,21 @@ class TransformerModel:
             mlflow.log_param("learning_rate", self.learning_rate)
             mlflow.log_param("weights", self.weights)
 
-        """Predict valid metrics and save to mlflow"""
+        """Evaluate and log valid metrics to mlflow"""
         with mlflow.start_run():
             mlflow.set_tag(
                 "mlflow.runName", f"valid_{mlflow.active_run().info.run_name}"
             )
+            """"Evaluate and log valid metrics"""
+            log_metrics(self.valid_targets, self.valid_outputs)
 
-            def run_validation():
-                self.model.eval()
-                fin_outputs = []
-                fin_targets = []
-                with torch.no_grad():
-                    for _, data in enumerate(self.valid_loader, 0):
-                        ids = data["ids"].to(DEVICE, dtype=torch.long)
-                        mask = data["mask"].to(DEVICE, dtype=torch.long)
-                        token_type_ids = data["token_type_ids"].to(
-                            DEVICE, dtype=torch.long
-                        )
-                        targets = data["targets"].to(DEVICE, dtype=torch.float)
-                        outputs = self.model(ids, mask, token_type_ids)
-                        fin_targets.extend(targets.cpu().detach().numpy().tolist())
-                        fin_outputs.extend(
-                            torch.sigmoid(outputs).cpu().detach().numpy().tolist()
-                        )
-                    return fin_outputs, fin_targets
-
-            outputs, targets = run_validation()
-            outputs = np.array(outputs) >= self.threshold  # threshold
-            logger.info("validation is done")
-
-            """Compute metrics"""
-            precision = metrics.precision_score(targets, outputs, average="weighted")
-            recall = metrics.recall_score(targets, outputs, average="weighted")
-            conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
-            f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
-            f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
-            label_columns = [
-                "valid_toxic",
-                "valid_severe_toxic",
-                "valid_obscene",
-                "valid_threat",
-                "valid_insult",
-                "valid_identity_hate",
-            ]
-            for i, matrix in enumerate(conf_matrix):
-                print(label_columns[i])
-                print(matrix)
-
-            """Log valid metrics"""
-            # Precision
-            mlflow.log_metric("Precision", float(precision))
-            # Recall
-            mlflow.log_metric("Recall", recall)
-            # micro_f1
-            mlflow.log_metric("F1_micro", f1_score_micro)
-            # macro_f1
-            mlflow.log_metric("F1_macro", f1_score_macro)
-
-        """Predict test metrics and save to mlflow"""
+        """Evaluate and log test metrics to mlflow"""
         with mlflow.start_run():
             mlflow.set_tag(
                 "mlflow.runName", f"test_{mlflow.active_run().info.run_name}"
             )
-
-            def run_test():
-                self.model.eval()
-                fin_outputs = []
-                fin_targets = []
-                with torch.inference_mode():
-                    for _, data in enumerate(self.test_loader, 0):
-                        ids = data["ids"].to(DEVICE, dtype=torch.long)
-                        mask = data["mask"].to(DEVICE, dtype=torch.long)
-                        token_type_ids = data["token_type_ids"].to(
-                            DEVICE, dtype=torch.long
-                        )
-                        targets = data["targets"].to(DEVICE, dtype=torch.float)
-                        outputs = self.model(ids, mask, token_type_ids)
-                        fin_targets.extend(targets.cpu().detach().numpy().tolist())
-                        fin_outputs.extend(
-                            torch.sigmoid(outputs).cpu().detach().numpy().tolist()
-                        )
-                    return fin_outputs, fin_targets
-
-            outputs, targets = run_test()
-            outputs = np.array(outputs) >= self.threshold  # threshold
-            logger.info("test is done")
-
-            """Compute metrics"""
-            precision = metrics.precision_score(targets, outputs, average="weighted")
-            recall = metrics.recall_score(targets, outputs, average="weighted")
-            conf_matrix = metrics.multilabel_confusion_matrix(targets, outputs)
-            f1_score_micro = metrics.f1_score(targets, outputs, average="micro")
-            f1_score_macro = metrics.f1_score(targets, outputs, average="macro")
-            label_columns = [
-                "test_toxic",
-                "test_severe_toxic",
-                "test_obscene",
-                "test_threat",
-                "test_insult",
-                "test_identity_hate",
-            ]
-            for i, matrix in enumerate(conf_matrix):
-                print(label_columns[i])
-                print(matrix)
-
-            """Log test metrics"""
-            # Precision
-            mlflow.log_metric("Precision", float(precision))
-            # Recall
-            mlflow.log_metric("Recall", recall)
-            # micro_f1
-            mlflow.log_metric("F1_micro", f1_score_micro)
-            # macro_f1
-            mlflow.log_metric("F1_macro", f1_score_macro)
-
-    def evaluate(self):
-        """metod evaluate train, valid, test subsamples and save to metrics"""
-        pass
-
-    def predict(self):
-        """predict test data"""
-        pass
+            """"Evaluate and log test metrics"""
+            log_metrics(self.test_targets, self.test_outputs)
 
 
 if __name__ == "__main__":
@@ -392,10 +245,6 @@ if __name__ == "__main__":
             threshold=args.threshold,
             num_classes=args.num_classes,
         )
-        # if args.model_to_load:
-        #     pipeline = cPickle.load(open(f"model/{args.model_to_load}.pkl", "rb"))
-        # else:
-        #     pipeline = None
         classifier.train()
-        # classifier.evaluate()
-        # classifier.predict()
+        classifier.predict()
+        classifier.evaluate()

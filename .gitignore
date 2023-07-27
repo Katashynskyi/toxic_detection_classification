@@ -2,12 +2,13 @@
 .idea/
 Task_description.txt
 Method_1_standart/data/
-Method_1_standart/mlruns/
-Method_2_transformer/mlruns/
-Method_1_standart/src/temp/
 Method_1_standart/run_train.py
 Method_1_standart/run_train.sh
+Method_1_standart/mlruns/
+Method_1_standart/src/temp/
+Method_2_transformer/mlruns/
 Method_2_transformer/Testing/
+Method_2_transformer/model/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
