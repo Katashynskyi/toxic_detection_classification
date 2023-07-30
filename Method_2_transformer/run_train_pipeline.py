@@ -1,12 +1,13 @@
 import argparse
-import logging as logger
+
+# import logging as logger
 import numpy as np
 import pandas as pd
 import torch
 import mlflow
 
 # from mlflow import log_artifacts, log_metric, log_param
-from tqdm import tqdm
+# from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import DistilBertTokenizer
 from src.utils.utils import Split, ReadPrepare
@@ -30,6 +31,8 @@ pd.set_option("display.max_columns", 100)
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(DEVICE)
+
+RANDOM_STATE = 42
 
 
 class TransformerModel:
@@ -56,6 +59,9 @@ class TransformerModel:
         self.learning_rate = learning_rate
         self.threshold = threshold
         self.num_classes = num_classes
+
+        self.train_outputs = self.valid_outputs = self.test_outputs = 0
+        self.train_targets = self.valid_targets = self.test_targets = 0
 
     def __training_setup(self):
         """hidden method to prepare dataset.
@@ -119,9 +125,10 @@ class TransformerModel:
         )
 
     def train(self):
-        """method to train data"""
+        """train data and save model"""
         self.__training_setup()
-        """Train"""
+
+        """fit and evaluate train subset"""
         for epoch in range(self.epochs):
             print("epoch", epoch)
             RunTrainValidTest(
@@ -146,55 +153,63 @@ class TransformerModel:
         # )  # TODO: should we save with ability to train again???
         self.model.save()
 
-        """Evaluate"""
+    def predict(self):
+        """Method to predict valid data and test data"""
+
+        """Evaluate validation subset"""
         outputs, self.valid_targets = RunTrainValidTest(
             model=self.model, loader=self.valid_loader, optimizer=self.optimizer
         ).run_validation()
         self.valid_outputs = np.array(outputs) >= self.threshold  # threshold
 
-    def predict(self):
-        """Method to predict test data"""
+        """Evaluate test subset"""
         outputs, self.test_targets = RunTrainValidTest(
             model=self.model, loader=self.test_loader, optimizer=self.optimizer
         ).run_test()
-
         self.test_outputs = np.array(outputs) >= self.threshold  # threshold
 
-    def evaluate(self):
-        """method to evaluate and log train, valid, test subsample metrics"""
+    def evaluate(self, type_="train"):
+        """method to evaluate and log train, valid, test subsample metrics
+        can get pre-trained model, and it's almost inference+metrics
+
+        Args:
+            type_: "train", "valid" or "test"
+        """
         mlflow.set_experiment("Toxicity_transformer_classifier")
+        if type_ == "train":
+            """Evaluate and log train metrics, log hyperparams to mlflow"""
+            with mlflow.start_run():
+                mlflow.set_tag(
+                    "mlflow.runName", f"train_{mlflow.active_run().info.run_name}"
+                )
+                """"Evaluate and log train metrics"""
+                log_metrics(self.train_targets, self.train_outputs, label="train")
 
-        """Evaluate and log train metrics, log hyperparams to mlflow"""
-        with mlflow.start_run():
-            mlflow.set_tag(
-                "mlflow.runName", f"train_{mlflow.active_run().info.run_name}"
-            )
-            """"Evaluate and log train metrics"""
-            log_metrics(self.train_targets, self.train_outputs)
+                """Log hyperparams"""
+                mlflow.log_param("n_samples", self.n_samples)
+                mlflow.log_param("epochs", self.epochs)
+                mlflow.log_param("threshold", self.threshold)
+                mlflow.log_param("max_len", self.max_len)
+                mlflow.log_param("learning_rate", self.learning_rate)
+                mlflow.log_param("weights", self.weights)
 
-            """Log hyperparams"""
-            mlflow.log_param("n_samples", self.n_samples)
-            mlflow.log_param("epochs", self.epochs)
-            mlflow.log_param("threshold", self.threshold)
-            mlflow.log_param("max_len", self.max_len)
-            mlflow.log_param("learning_rate", self.learning_rate)
-            mlflow.log_param("weights", self.weights)
+        elif type_ == "valid":
+            """Evaluate and log valid metrics to mlflow"""
+            with mlflow.start_run():
+                mlflow.set_tag(
+                    "mlflow.runName", f"valid_{mlflow.active_run().info.run_name}"
+                )
+                """"Evaluate and log valid metrics"""
+                log_metrics(self.valid_targets, self.valid_outputs, label="valid")
 
-        """Evaluate and log valid metrics to mlflow"""
-        with mlflow.start_run():
-            mlflow.set_tag(
-                "mlflow.runName", f"valid_{mlflow.active_run().info.run_name}"
-            )
-            """"Evaluate and log valid metrics"""
-            log_metrics(self.valid_targets, self.valid_outputs)
-
-        """Evaluate and log test metrics to mlflow"""
-        with mlflow.start_run():
-            mlflow.set_tag(
-                "mlflow.runName", f"test_{mlflow.active_run().info.run_name}"
-            )
-            """"Evaluate and log test metrics"""
-            log_metrics(self.test_targets, self.test_outputs)
+        elif type_ == "test":
+            """Evaluate and log test metrics to mlflow"""
+            with mlflow.start_run():
+                mlflow.set_tag(
+                    "mlflow.runName", f"test_{mlflow.active_run().info.run_name}"
+                )
+                """"Evaluate and log test metrics"""
+                log_metrics(self.test_targets, self.test_outputs, label="test")
 
 
 if __name__ == "__main__":
@@ -205,16 +220,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path",
         help="Data path",
-        default="D:/Programming/DB's/toxic_db_for_transformert/train.csv",  # Home-PC
+        default="D:/Programming/DB's/toxic_db_for_transformer/train.csv",  # Home-PC
         # default="D:/Programming/db's/toxicity_kaggle_1/train.csv",  # Work-PC
     )
     parser.add_argument(
-        "--random_state", help="Choose seed for random state", default=42
+        "--random_state", help="Choose seed for random state", default=RANDOM_STATE
     )
     parser.add_argument(
-        # TODO: Max lenght of ???
+        # TODO: Max length of ???
         "--max_len",
-        help="Max lenght of ???",
+        help="Max length of ???",
         default=128  # home_PC
         # default=512 # work_PC
     )
@@ -245,6 +260,8 @@ if __name__ == "__main__":
             threshold=args.threshold,
             num_classes=args.num_classes,
         )
+
         classifier.train()
         classifier.predict()
-        classifier.evaluate()
+        for eval_type in ["train", "valid", "test"]:
+            classifier.evaluate(type_=eval_type)

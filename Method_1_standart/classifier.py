@@ -234,7 +234,7 @@ class ClassifierModel:
                     train_y.iloc[train_idx],
                     train_y.iloc[valid_idx],
                 )
-                fold_pred_y_train = self.pipeline.predict(fold_train_X)
+                fold_pred_y_train = self.pipeline.predict()
 
                 """classification report of train set"""
                 df = pd.DataFrame(
@@ -366,7 +366,7 @@ class ClassifierModel:
                     train_y.iloc[train_idx],
                     train_y.iloc[valid_idx],
                 )
-                fold_pred_y_valid = self.pipeline.predict(fold_valid_X)
+                fold_pred_y_valid = self.pipeline.predict()
 
                 """classification report of valid set"""
                 df = pd.DataFrame(
@@ -455,7 +455,7 @@ class ClassifierModel:
             )
             test_X, test_y = self.test_X, self.test_y
             """Predict on test data"""
-            pred_y = self.pipeline.predict(test_X)
+            pred_y = self.pipeline.predict()
             # self.pipeline.save()
 
             """classification report of train set"""

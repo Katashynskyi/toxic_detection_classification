@@ -47,9 +47,11 @@ class DistilBERTClass(torch.nn.Module):
             pass
         torch.save(self.state_dict(), filepath)
 
-    def load(self, filepath="model/model_weights.pth"):
+    def load(self, filepath="model/model_weights1e-05.pth"):
+        # TODO: try load, add it to main classifier
         # Load the model's state dictionary from the specified filepath
         self.load_state_dict(torch.load(filepath))
+        return self
 
 
 if __name__ == "__main__":
