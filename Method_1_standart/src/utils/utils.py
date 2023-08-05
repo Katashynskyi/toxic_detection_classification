@@ -30,7 +30,9 @@ class ReadPrepare:
 
     def data_process(self) -> pd.DataFrame:
         if self.n_samples:
-            df = pd.read_csv(self.path).tail(self.n_samples)
+            df = pd.read_csv(self.path, chunksize=self.n_samples).get_chunk(
+                size=self.n_samples
+            )
         else:
             df = pd.read_csv(self.path)
         df.drop_duplicates(
@@ -124,21 +126,21 @@ class Split:
         return self._X_test, self._y_test
 
 
-if __name__ == "__main__":
-    from features_preprocessing import Preprocessor
-    from sklearn.metrics import classification_report, confusion_matrix
-    from sklearn.pipeline import make_pipeline
-    from sklearn.svm import LinearSVC
+# if __name__ == "__main__":
+# from features_preprocessing import Preprocessor
+# from sklearn.metrics import classification_report, confusion_matrix
+# from sklearn.pipeline import make_pipeline
+# from sklearn.svm import LinearSVC
 
-    # Path
-    path = "../../../../../DB's/Toxic_database/tox_train.csv"
-    # ReadPrepare test
-    rp = ReadPrepare(path=path, n_samples=-1).data_process()  # csv -> pd.DataFrame
-    # Split test
-    splitter = Split(df=rp)
-    train_X, train_y = splitter.get_train_data()  # -> pd.DataFrame
-    test_X, test_y = splitter.get_test_data()  # -> pd.DataFrame
-    print(f"train_X:\n{train_X.tail(1)}")
-    print(f"train_y:\n{train_y.tail(1)}")
-    print(f"test_X:\n{test_X.tail(1)}")
-    print(f"test_y:\n{test_y.tail(1)}")
+# # Path
+# path = "../../../../../DB's/Toxic_database/tox_train.csv"
+# # ReadPrepare test
+# rp = ReadPrepare(path=path, n_samples=-1).data_process()  # csv -> pd.DataFrame
+# # Split test
+# splitter = Split(df=rp)
+# train_X, train_y = splitter.get_train_data()  # -> pd.DataFrame
+# test_X, test_y = splitter.get_test_data()  # -> pd.DataFrame
+# print(f"train_X:\n{train_X.tail(1)}")
+# print(f"train_y:\n{train_y.tail(1)}")
+# print(f"test_X:\n{test_X.tail(1)}")
+# print(f"test_y:\n{test_y.tail(1)}")

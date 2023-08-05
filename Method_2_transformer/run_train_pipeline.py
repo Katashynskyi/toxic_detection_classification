@@ -81,7 +81,7 @@ class TransformerModel:
         total_samples = len(train_data["labels"].values)
         num_classes = len(train_data["labels"][0])
 
-        # Setup formula four weights
+        # Setup formula for weights
         weights = []
         for i in range(6):
             counts = Counter(train_data["labels"].apply(lambda x: x[i]))
@@ -169,8 +169,8 @@ class TransformerModel:
         self.test_outputs = np.array(outputs) >= self.threshold  # threshold
 
     def evaluate(self, type_="train"):
-        """method to evaluate and log train, valid, test subsample metrics
-        can get pre-trained model, and it's almost inference+metrics
+        """method to evaluate and log train, valid, test subsample metrics.
+        Can load pre-trained model, and it's almost inference+metrics
 
         Args:
             type_: "train", "valid" or "test"

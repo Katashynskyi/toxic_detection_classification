@@ -2,11 +2,6 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 
-desired_width = 1000
-pd.set_option("display.width", desired_width)
-pd.set_option("display.max_columns", 100)
-RANDOM_STATE = 42
-
 
 class ReadPrepare:
     """
@@ -33,7 +28,9 @@ class ReadPrepare:
 
     def data_process(self) -> pd.DataFrame:
         if self.n_samples:
-            df = pd.read_csv(self.path).tail(self.n_samples)
+            df = pd.read_csv(self.path, chunksize=self.n_samples).get_chunk(
+                size=self.n_samples
+            )
         else:
             df = pd.read_csv(self.path)
         df.drop_duplicates(
@@ -173,19 +170,23 @@ class Split:
 
 
 if __name__ == "__main__":
-    from sklearn.metrics import classification_report, confusion_matrix
-    from sklearn.pipeline import make_pipeline
-    from sklearn.svm import LinearSVC
+    _desired_width = 1000
+    pd.set_option("display.width", _desired_width)
+    pd.set_option("display.max_columns", 100)
+    RANDOM_STATE = 42
+    # from sklearn.metrics import classification_report, confusion_matrix
+    # from sklearn.pipeline import make_pipeline
+    # from sklearn.svm import LinearSVC
 
     # Path's
-    # PATH = "D:/Programming/db's/toxicity_kaggle_1/train.csv" # work_PC
+    # _PATH = "D:/Programming/db's/toxicity_kaggle_1/train.csv" # work_PC
     # PATH2 = "D:/Programming/db's/toxicity_kaggle_1/test.csv" # work_PC
-    PATH = "D:/Programming/DB's/toxic_db_for_transformert/train.csv"  # home_PC
+    _PATH = "D:/Programming/DB's/toxic_db_for_transformert/train.csv"  # home_PC
     # PATH2 = "D:/Programming/DB's/toxic_db_for_transformert/test.csv"  # home_PC
 
     # path = "../../../../../DB's/Toxic_database/tox_train.csv"
     # ReadPrepare test
-    rp = ReadPrepare(path=PATH, n_samples=600).data_process()  # csv -> pd.DataFrame
+    rp = ReadPrepare(path=_PATH, n_samples=600).data_process()  # csv -> pd.DataFrame
     # Split test
     splitter = Split(df=rp, test_size=0.3)
     train_data = splitter.get_train_data()  # -> pd.DataFrame

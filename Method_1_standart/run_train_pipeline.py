@@ -1,6 +1,5 @@
 import argparse
 import logging as logger
-import os
 import warnings
 
 import lightgbm as lgb
@@ -8,7 +7,6 @@ import mlflow
 import numpy as np
 import optuna
 import pandas as pd
-from mlflow import log_artifacts, log_metric, log_param
 from optuna.integration import OptunaSearchCV
 from sklearn.metrics import (
     classification_report,
