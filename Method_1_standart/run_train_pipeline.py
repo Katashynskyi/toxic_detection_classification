@@ -1,7 +1,7 @@
 import argparse
 import logging as logger
 import warnings
-
+import os
 import lightgbm as lgb
 import mlflow
 import numpy as np
@@ -12,10 +12,8 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     roc_auc_score,
-    f1_score,
-    make_scorer,
 )
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
@@ -59,7 +57,7 @@ class ClassifierModel:
         ).data_process()
 
         # Split
-        self.train_X, self.train_y = Split(df=df).get_train_data()
+        self.train_x, self.train_y = Split(df=df).get_train_data()
         self.test_X, self.test_y = Split(df=df).get_test_data()
 
         # Model pipeline
@@ -183,7 +181,7 @@ class ClassifierModel:
     def train(self):
         """... and one method to rule them all. (c)"""
         self.__training_setup()
-        train_X, train_y = self.train_X, self.train_y
+        train_x, train_y = self.train_x, self.train_y
 
         """MLFlow Config"""
         logger.info("Setting up MLFlow Config")
@@ -205,12 +203,12 @@ class ClassifierModel:
                 "mlflow.runName", f"train_{mlflow.active_run().info.run_name}"
             )
             """Train & predict"""
-            self.pipeline.fit(train_X, train_y)
+            self.pipeline.fit(train_x, train_y)
             logger.info("train is done")
             logger.info("↓↓↓ TRAIN METRICS ↓↓↓")
 
             """Get mean train & validation metrics"""
-            precision_scores, recall_scores, macro_f1, weighted_f1, AUC, best_score = (
+            precision_scores, recall_scores, macro_f1, weighted_f1, auc, best_score = (
                 [],
                 [],
                 [],
@@ -218,21 +216,21 @@ class ClassifierModel:
                 [],
                 [],
             )
-            TN_train, TP_train, FP_train, FN_train = [], [], [], []
+            tn_train, tp_train, fp_train, fn_train = [], [], [], []
 
             for i, (train_idx, valid_idx) in enumerate(
-                self.skf.split(train_X, train_y)
+                self.skf.split(train_x, train_y)
             ):
                 # Train & validation indexes
-                fold_train_X, fold_valid_X = (
-                    train_X.iloc[train_idx],
-                    train_X.iloc[valid_idx],
+                fold_train_x, fold_valid_x = (
+                    train_x.iloc[train_idx],
+                    train_x.iloc[valid_idx],
                 )
                 fold_train_y, fold_valid_y = (
                     train_y.iloc[train_idx],
                     train_y.iloc[valid_idx],
                 )
-                fold_pred_y_train = self.pipeline.predict()
+                fold_pred_y_train = self.pipeline.predict(fold_train_x)
 
                 """classification report of train set"""
                 df = pd.DataFrame(
@@ -255,36 +253,37 @@ class ClassifierModel:
                 # Best Score
                 best_score.append(self.pipeline.best_score_)
                 # AUC
-                AUC.append(roc_auc_score(fold_train_y, fold_pred_y_train))
+                auc.append(roc_auc_score(fold_train_y, fold_pred_y_train))
                 # Confusion matrix
                 conf_matrix = confusion_matrix(fold_train_y, fold_pred_y_train)
-                TN_train.append(conf_matrix[0][0])
-                TP_train.append(conf_matrix[1][1])
-                FP_train.append(conf_matrix[0][1])
-                FN_train.append(conf_matrix[1][0])
+                tn_train.append(conf_matrix[0][0])
+                tp_train.append(conf_matrix[1][1])
+                fp_train.append(conf_matrix[0][1])
+                fn_train.append(conf_matrix[1][0])
 
             # Compute the mean of the metrics
             mean_precision = sum(precision_scores) / len(precision_scores)
             mean_recall = sum(recall_scores) / len(recall_scores)
             mean_macro_f1 = sum(macro_f1) / len(macro_f1)
             mean_weighted_f1 = sum(weighted_f1) / len(weighted_f1)
-            mean_AUC_train = round((sum(AUC) / len(AUC)), 2)
+            mean_auc_train = round((sum(auc) / len(auc)), 2)
             mean_best_score_train = sum(best_score) / len(best_score)
-            mean_TN_train = int(sum(TN_train) / len(TN_train))
-            mean_TP_train = int(sum(TP_train) / len(TP_train))
-            mean_FP_train = int(sum(FP_train) / len(FP_train))
-            mean_FN_train = int(sum(FN_train) / len(FN_train))
+            mean_tn_train = int(sum(tn_train) / len(tn_train))
+            mean_tp_train = int(sum(tp_train) / len(tp_train))
+            mean_fp_train = int(sum(fp_train) / len(fp_train))
+            mean_fn_train = int(sum(fn_train) / len(fn_train))
 
             """Show train metrics"""
-            # TODO: how to insert classification_report of cross validation? I have no train_y, pred_y, and can't use mean
+            # TODO: how to insert classification_report of cross validation?
+            #  I have no train_y, pred_y, and can't use mean
             # logger.info(
             #     f"\n{pd.DataFrame(classification_report(train_y, pred_y, output_dict=1, target_names=['non-toxic', 'toxic'])).transpose()}"
             # )
-            logger.info(f"\n    Area Under the Curve score: {mean_AUC_train}")
+            logger.info(f"\n    Area Under the Curve score: {mean_auc_train}")
             logger.info(
                 f"\n Correlation matrix"
                 f"\n (true negatives, false positives)\n (false negatives, true positives)"
-                f"\n {mean_TN_train, mean_FP_train}\n {mean_FN_train, mean_TP_train}"
+                f"\n {mean_tn_train, mean_fp_train}\n {mean_fn_train, mean_tp_train}"
             )
             logger.info("Training Complete. Logging train results into MLFlow")
 
@@ -305,13 +304,13 @@ class ClassifierModel:
             mlflow.log_metric("Best Score", "%.2f " % mean_best_score_train)
 
             # AUC
-            mlflow.log_metric("AUC", mean_AUC_train)
+            mlflow.log_metric("AUC", mean_auc_train)
 
             # Confusion matrix
-            mlflow.log_metric("Conf_TN", mean_TN_train)
-            mlflow.log_metric("Conf_TP", mean_TP_train)
-            mlflow.log_metric("Conf_FP", mean_FP_train)
-            mlflow.log_metric("Conf_FN", mean_FN_train)
+            mlflow.log_metric("Conf_TN", mean_tn_train)
+            mlflow.log_metric("Conf_TP", mean_tp_train)
+            mlflow.log_metric("Conf_FP", mean_fp_train)
+            mlflow.log_metric("Conf_FN", mean_fn_train)
 
             """Log hyperparams"""
             # best of hyperparameter tuning
@@ -326,7 +325,7 @@ class ClassifierModel:
             # vectorizer type
             mlflow.log_param("vectorizer", self.vectorizer)
 
-            # number of trials of of hyperparameter tuning
+            # number of trials of hyperparameter tuning
             mlflow.log_param("n_trials", self.n_trials)
 
             # toxicity threshold
@@ -342,7 +341,7 @@ class ClassifierModel:
             )
 
             """Get mean validation metrics"""
-            precision_scores, recall_scores, macro_f1, weighted_f1, AUC, best_score = (
+            precision_scores, recall_scores, macro_f1, weighted_f1, auc, best_score = (
                 [],
                 [],
                 [],
@@ -350,21 +349,21 @@ class ClassifierModel:
                 [],
                 [],
             )
-            TN_valid, TP_valid, FP_valid, FN_valid = [], [], [], []
+            tn_valid, tp_valid, fp_valid, fn_valid = [], [], [], []
 
             for i, (train_idx, valid_idx) in enumerate(
-                self.skf.split(train_X, train_y)
+                self.skf.split(train_x, train_y)
             ):
                 # Train & validation indexes
-                fold_train_X, fold_valid_X = (
-                    train_X.iloc[train_idx],
-                    train_X.iloc[valid_idx],
+                fold_train_x, fold_valid_x = (
+                    train_x.iloc[train_idx],
+                    train_x.iloc[valid_idx],
                 )
                 fold_train_y, fold_valid_y = (
                     train_y.iloc[train_idx],
                     train_y.iloc[valid_idx],
                 )
-                fold_pred_y_valid = self.pipeline.predict()
+                fold_pred_y_valid = self.pipeline.predict(fold_valid_x)
 
                 """classification report of valid set"""
                 df = pd.DataFrame(
@@ -387,37 +386,38 @@ class ClassifierModel:
                 # Best Score
                 best_score.append(self.pipeline.best_score_)
                 # AUC
-                AUC.append(roc_auc_score(fold_valid_y, fold_pred_y_valid))
+                auc.append(roc_auc_score(fold_valid_y, fold_pred_y_valid))
                 # Confusion matrix
                 conf_matrix = confusion_matrix(fold_valid_y, fold_pred_y_valid)
-                TN_valid.append(conf_matrix[0][0])
-                TP_valid.append(conf_matrix[1][1])
-                FP_valid.append(conf_matrix[0][1])
-                FN_valid.append(conf_matrix[1][0])
+                tn_valid.append(conf_matrix[0][0])
+                tp_valid.append(conf_matrix[1][1])
+                fp_valid.append(conf_matrix[0][1])
+                fn_valid.append(conf_matrix[1][0])
 
             # Compute the mean of the metrics
             mean_precision = sum(precision_scores) / len(precision_scores)
             mean_recall = sum(recall_scores) / len(recall_scores)
             mean_macro_f1 = sum(macro_f1) / len(macro_f1)
             mean_weighted_f1 = sum(weighted_f1) / len(weighted_f1)
-            mean_AUC = round((sum(AUC) / len(AUC)), 2)
+            mean_auc = round((sum(auc) / len(auc)), 2)
             mean_best_score = sum(best_score) / len(best_score)
-            mean_TN_valid = int(sum(TN_valid) / len(TN_valid))
-            mean_TP_valid = int(sum(TP_valid) / len(TP_valid))
-            mean_FP_valid = int(sum(FP_valid) / len(FP_valid))
-            mean_FN_valid = int(sum(FN_valid) / len(FN_valid))
+            mean_tn_valid = int(sum(tn_valid) / len(tn_valid))
+            mean_tp_valid = int(sum(tp_valid) / len(tp_valid))
+            mean_fp_valid = int(sum(fp_valid) / len(fp_valid))
+            mean_fn_valid = int(sum(fn_valid) / len(fn_valid))
 
             logger.info("↓↓↓ VALID METRICS ↓↓↓")
             """Show valid metrics"""
-            # TODO: how to insert classification_report of cross validation? I have no train_y, pred_y, and can't use mean
+            # TODO: how to insert classification_report of cross validation?
+            #  I have no train_y, pred_y, and can't use mean
             # logger.info(
             #     f"\n{pd.DataFrame(classification_report(train_y, pred_y, output_dict=1, target_names=['non-toxic', 'toxic'])).transpose()}"
             # )
-            logger.info(f"\n    Area Under the Curve score: {mean_AUC}")
+            logger.info(f"\n    Area Under the Curve score: {mean_auc}")
             logger.info(
                 f"\n Correlation matrix"
                 f"\n (true negatives, false positives)\n (false negatives, true positives)"
-                f"\n {mean_TN_valid, mean_FP_valid}\n {mean_FN_valid, mean_TP_valid}"
+                f"\n {mean_tn_valid, mean_fp_valid}\n {mean_fn_valid, mean_tp_valid}"
             )
             logger.info("Logging validation results into MLFlow")
 
@@ -438,22 +438,22 @@ class ClassifierModel:
             mlflow.log_metric("Best Score", "%.2f " % mean_best_score)
 
             # AUC
-            mlflow.log_metric("AUC", mean_AUC)
+            mlflow.log_metric("AUC", mean_auc)
 
             # Confusion matrix
-            mlflow.log_metric("Conf_TN", mean_TN_valid)
-            mlflow.log_metric("Conf_TP", mean_TP_valid)
-            mlflow.log_metric("Conf_FP", mean_FP_valid)
-            mlflow.log_metric("Conf_FN", mean_FN_valid)
+            mlflow.log_metric("Conf_TN", mean_tn_valid)
+            mlflow.log_metric("Conf_TP", mean_tp_valid)
+            mlflow.log_metric("Conf_FP", mean_fp_valid)
+            mlflow.log_metric("Conf_FN", mean_fn_valid)
 
         """Predict test metrics and save to mlflow"""
         with mlflow.start_run():
             mlflow.set_tag(
                 "mlflow.runName", f"test_{mlflow.active_run().info.run_name}"
             )
-            test_X, test_y = self.test_X, self.test_y
+            test_x, test_y = self.test_X, self.test_y
             """Predict on test data"""
-            pred_y = self.pipeline.predict()
+            pred_y = self.pipeline.predict(test_x)
             # self.pipeline.save()
 
             """classification report of train set"""
@@ -511,13 +511,18 @@ class ClassifierModel:
             mlflow.log_metric("Conf_FN", conf_matrix[1][0])
 
         if self.save_model:
+            try:
+                os.mkdir("./data/")
+            except:
+                pass
             """Log(save) model"""
-            mlflow.sklearn.log_model(
-                self.pipeline,
-                artifact_path="/Method_1_standart/data/model_log",
-                serialization_format="pickle",
-            )
-            # mlflow.set_tag("Version", run_version)
+            import pickle
+
+            # Define the path to save the model
+            model_path = "data/classic_model.pkl"
+            # Save the model to a pickle file
+            with open(model_path, "wb") as model_file:
+                pickle.dump(self.pipeline, model_file)
             logger.info("Model Trained and saved into MLFlow artifact location")
         else:
             logger.info("Model Trained but not saved into MLFlow artifact location")
@@ -531,7 +536,7 @@ if __name__ == "__main__":
         # default="../../../DB's/Toxic_database/tox_train.csv",  # Home-PC
         default="D:/Programming/db's/toxicity_main/tox_train.csv",  # Work-PC
     )
-    parser.add_argument("--n_samples", help="How many samples to pass?", default=10000)
+    parser.add_argument("--n_samples", help="How many samples to pass?", default=-1)
     parser.add_argument(
         "--tox_threshold",
         help="What's a threshold for toxicity from 0.0 to 1.0?",
@@ -549,12 +554,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--classifier_type",
         help='Choose "logreg", "xgboost" or "lgbm"',
-        default="logreg",
+        default="xgboost",
     )
     parser.add_argument(
         "--save_model",
         help="Choose True or False",
-        default=False,
+        default=True,
     )
     args = parser.parse_args()
     if args.type_of_run == "train":
