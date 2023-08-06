@@ -25,14 +25,13 @@ from collections import Counter
 
 warnings.filterwarnings("ignore")
 
-desired_width = 1000
-pd.set_option("display.width", desired_width)
-pd.set_option("display.max_columns", 100)
-
+# Preset settings
+RANDOM_STATE = 42
+pd.set_option("display.width", 1000)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.max_colwidth", None)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(DEVICE)
-
-RANDOM_STATE = 42
 
 
 class TransformerModel:

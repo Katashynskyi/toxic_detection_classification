@@ -21,10 +21,14 @@ from xgboost import XGBClassifier
 from src.utils.features_preprocessing import Preprocessor
 from src.utils.utils import ReadPrepare, Split
 
+
+# Preset settings
+RANDOM_STATE = 42
+pd.set_option("display.width", 1000)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.max_colwidth", None)
 warnings.filterwarnings("ignore")
 logger.getLogger().setLevel(logger.INFO)
-
-RANDOM_STATE = 42
 
 
 class ClassifierModel:
@@ -533,10 +537,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path",
         help="Data path",
-        # default="../../../DB's/Toxic_database/tox_train.csv",  # Home-PC
-        default="D:/Programming/db's/toxicity_main/tox_train.csv",  # Work-PC
+        default="../../../DB's/Toxic_database/tox_train.csv",  # Home-PC
+        # default="D:/Programming/db's/toxicity_main/tox_train.csv",  # Work-PC
     )
-    parser.add_argument("--n_samples", help="How many samples to pass?", default=-1)
+    parser.add_argument("--n_samples", help="How many samples to pass?", default=500)
     parser.add_argument(
         "--tox_threshold",
         help="What's a threshold for toxicity from 0.0 to 1.0?",
@@ -549,12 +553,12 @@ if __name__ == "__main__":
         "--type_of_run", help='"train" of "inference"?', default="train"
     )
     parser.add_argument(
-        "--vectorizer", help='Choose "tfidf" or "spacy"', default="tfidf"
+        "--vectorizer", help='Choose "tfidf" or "spacy"', default="spacy"
     )
     parser.add_argument(
         "--classifier_type",
         help='Choose "logreg", "xgboost" or "lgbm"',
-        default="xgboost",
+        default="lgbm",
     )
     parser.add_argument(
         "--save_model",
