@@ -207,21 +207,27 @@ class ReadPrepare:
         self.n_samples = n_samples
         self.tox_threshold = tox_threshold
 
-    def clean_text(self, text):
+    @staticmethod
+    def clean_text(text):
         """
         Preprocesses text for cleaning and standardization.
+
+        The preprocessed text with emoji converted, links replaced, user mentions removed,
+        numbers removed, converted to lowercase, non-alphanumeric characters removed except "?", "!", ",", and "'",
+        and extra spaces removed.
+
 
         Args:
             text (str): The input text to be preprocessed.
 
         Returns:
-            str: The preprocessed text with emoji converted, links replaced, user mentions removed,
-                 numbers removed, converted to lowercase, non-alphanumeric characters removed except "?", "!", ",", and "'",
-                 and extra spaces removed.
+            str: The preprocessed text.
         """
+        # make all comments str type
+        text = str(text)
+
         # Convert emoji to their textual representations
         text = emoji.demojize(text)
-
         # Replace URLs with a placeholder
         text = re.sub(r"http\S+", "<URL>", text)
 
@@ -242,7 +248,8 @@ class ReadPrepare:
 
         return text
 
-    def clean_contractions_n_mispell(self, text, mapping):
+    @staticmethod
+    def clean_contractions_n_mispell(text, mapping):
         """Clean contraction using contraction mapping"""
         specials = ["’", "‘", "´", "`"]
         for s in specials:
@@ -272,7 +279,7 @@ class ReadPrepare:
                 text, self.contraction_mapping
             )
         )
-        # # substitute mispell
+        # substitute misspell
         df["comment_text"] = df["comment_text"].apply(
             lambda text: self.clean_contractions_n_mispell(text, self.mispell_dict)
         )
@@ -312,7 +319,7 @@ class Split:
     """
 
     def __init__(
-        self, df=None, test_size: float = 0.1, stratify_by: str = "target_class"
+            self, df=None, test_size: float = 0.1, stratify_by: str = "target_class"
     ):
         self._df = df
         self._test_size = test_size
@@ -366,11 +373,13 @@ if __name__ == "__main__":
     # Path
     path = "../../../../../DB's/Toxic_database/tox_train.csv"
     # ReadPrepare test
-    rp = ReadPrepare(path=path, n_samples=10000).data_process()  # csv -> pd.DataFrame
-    print(rp.tail(3))
+    rp = ReadPrepare(path=path, n_samples=100000).data_process()  # csv -> pd.DataFrame
+    rp.to_csv(path_or_buf="../../../../../DB's/Toxic_database/tox_train_preprocessed.csv")
+    # print(rp.tail(3))
     # Split test
     # splitter = Split(df=rp)
     # train_X, train_y = splitter.get_train_data()  # -> pd.DataFrame
+    # print(train_X)
     # test_X, test_y = splitter.get_test_data()  # -> pd.DataFrame
     # print(f"train_X:\n{train_X.tail(1)}")
     # print(f"train_y:\n{train_y.tail(1)}")

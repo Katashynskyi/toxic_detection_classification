@@ -33,7 +33,6 @@ pd.set_option("display.max_colwidth", None)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(DEVICE)
 
-
 class TransformerModel:
     def __init__(
         self,
