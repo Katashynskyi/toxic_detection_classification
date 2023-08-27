@@ -97,12 +97,13 @@ class Split:
         valid_size: float = 0.2,
         test_size: float = 0.3,
         stratify_by: str = "threat",
+        random_state=42,
     ):
         self._df = df
         self._valid_size = valid_size
         self._test_size = test_size
         self._stratify_by = stratify_by
-
+        self.random_state = random_state
         self._X_temp = self._y_temp = pd.DataFrame()
         self._X_train = self._y_train = pd.DataFrame()
         self._X_test = self._y_test = pd.DataFrame()
@@ -117,20 +118,20 @@ class Split:
             self
         """
         df = self._df
-        df = shuffle(df, random_state=RANDOM_STATE)
+        df = shuffle(df, random_state=self.random_state)
         self._X_temp, self._X_test, self._y_temp, self._y_test = train_test_split(
             df["comment_text"],
             df["labels"],
             stratify=df[self._stratify_by],
             test_size=self._test_size,
-            random_state=RANDOM_STATE,
+            random_state=self.random_state,
         )
         self._X_train, self._X_valid, self._y_train, self._y_valid = train_test_split(
             self._X_temp,
             self._y_temp,
             # stratify=df[self._stratify_by],
             test_size=self._valid_size,
-            random_state=RANDOM_STATE,
+            random_state=self.random_state,
         )
         return self
 

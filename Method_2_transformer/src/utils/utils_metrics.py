@@ -9,7 +9,7 @@ from sklearn.datasets import make_multilabel_classification
 from sklearn.tree import DecisionTreeClassifier
 
 
-def log_metrics(targets, outputs, label: str = None, n_samples=None):
+def log_metrics(targets, outputs, label: str = None):
     """Log train, valid, test metrics
 
     Args:

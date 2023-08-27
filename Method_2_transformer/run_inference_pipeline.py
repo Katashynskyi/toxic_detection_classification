@@ -65,7 +65,7 @@ class TransformerModel:
         df = ReadPrepare(
             path=self.path, n_samples=self.n_samples
         ).data_process()  # csv -> pd.DataFrame
-        df.reset_index()
+        df.reset_index(inplace=True)
 
         # Tokenizer
         tokenizer = DistilBertTokenizer.from_pretrained(

@@ -4,7 +4,17 @@ from transformers import DistilBertModel
 
 
 class DistilBERTClass(torch.nn.Module):
+    """
+    A PyTorch module for fine-tuning DistilBERT for our classification tasks.
+    """
+
     def __init__(self, num_classes=6):
+        """
+        Initialize the DistilBERT classifier.
+
+        Args:
+            num_classes (int, optional): The number of output classes. Default is 6.
+        """
         super(DistilBERTClass, self).__init__()
         self.bert = DistilBertModel.from_pretrained("distilbert-base-uncased")
         self.classifier = torch.nn.Sequential(
@@ -14,19 +24,37 @@ class DistilBERTClass(torch.nn.Module):
             torch.nn.Linear(768, num_classes),
         )
 
-    def forward(self, input_ids, attention_mask, token_type_ids):
+    def forward(self, input_ids, attention_mask, token_type_ids=None):
+        """
+        Forward pass through the DistilBERT model.
+
+        Args:
+            input_ids (torch.Tensor): Input token IDs.
+            attention_mask (torch.Tensor): Attention mask.
+            token_type_ids (torch.Tensor): Token type IDs.
+
+        Returns:
+            torch.Tensor: Model predictions.
+        """
         output_1 = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         hidden_state = output_1[0]
         out = hidden_state[:, 0]
         out = self.classifier(out)
         return out
 
+    @staticmethod
     def _save(
-        self, filepath="model/model_weights.pth", epoch=None, model=None, optimizer=None
+        filepath="model/model_weights.pth", epoch=None, model=None, optimizer=None
     ):
-        """return 800 mb pth file"""
-        # TODO: look at Case # 2: Save model to resume training later
-        "https://stackoverflow.com/questions/42703500/how-do-i-save-a-trained-model-in-pytorch"
+        """
+        Save the model's state dictionary and other relevant data.
+
+        Args:
+            filepath (str, optional): The file path to save the model. Default is "model/model_weights.pth".
+            epoch (int, optional): The current epoch. Default is None.
+            model (nn.Module, optional): The model to save. Default is None.
+            optimizer (Optimizer, optional): The optimizer state to save. Default is None.
+        """
         state = {
             "epoch": epoch,
             "state_dict": model.state_dict(),
@@ -38,9 +66,14 @@ class DistilBERTClass(torch.nn.Module):
             pass
 
         torch.save(state, filepath)
-        # torch.save(self.state_dict(), filepath)
 
     def save(self, filepath="model/model_weights.pth"):
+        """
+        Save the model's state dictionary.
+
+        Args:
+            filepath (str, optional): The file path to save the model. Default is "model/model_weights.pth".
+        """
         try:
             os.mkdir("model")
         except FileExistsError:
@@ -48,12 +81,11 @@ class DistilBERTClass(torch.nn.Module):
         torch.save(self.state_dict(), filepath)
 
     def load(self, filepath="model/model_weights1e-05.pth"):
-        # TODO: try load, add it to main classifier
-        # Load the model's state dictionary from the specified filepath
+        """
+        Load the model's state dictionary from the specified filepath.
+
+        Args:
+            filepath (str, optional): The file path to load the model from. Default is "model/model_weights1e-05.pth".
+        """
         self.load_state_dict(torch.load(filepath))
         return self
-
-
-if __name__ == "__main__":
-    DistilBERTClass().save()
-    # DistilBERTClass.save()

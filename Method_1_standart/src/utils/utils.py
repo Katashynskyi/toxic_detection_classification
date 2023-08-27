@@ -319,7 +319,7 @@ class Split:
     """
 
     def __init__(
-            self, df=None, test_size: float = 0.1, stratify_by: str = "target_class"
+        self, df=None, test_size: float = 0.1, stratify_by: str = "target_class"
     ):
         self._df = df
         self._test_size = test_size
@@ -374,7 +374,9 @@ if __name__ == "__main__":
     path = "../../../../../DB's/Toxic_database/tox_train.csv"
     # ReadPrepare test
     rp = ReadPrepare(path=path, n_samples=100000).data_process()  # csv -> pd.DataFrame
-    rp.to_csv(path_or_buf="../../../../../DB's/Toxic_database/tox_train_preprocessed.csv")
+    rp.to_csv(
+        path_or_buf="../../../../../DB's/Toxic_database/tox_train_preprocessed.csv"
+    )
     # print(rp.tail(3))
     # Split test
     # splitter = Split(df=rp)

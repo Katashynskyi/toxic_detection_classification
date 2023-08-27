@@ -6,8 +6,6 @@ import pandas as pd
 import torch
 import mlflow
 
-# from mlflow import log_artifacts, log_metric, log_param
-# from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import DistilBertTokenizer
 from src.utils.utils import Split, ReadPrepare
@@ -16,12 +14,8 @@ from src.utils.utils_dataset import MultiLabelDataset
 from src.utils.utils_metrics import log_metrics
 from src.utils.train_test_valid_runs import RunTrainValidTest
 
-# from sklearn import metrics
 import warnings
 from collections import Counter
-
-# import seaborn as sns
-# import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
@@ -32,6 +26,7 @@ pd.set_option("display.max_columns", None)
 pd.set_option("display.max_colwidth", None)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(DEVICE)
+
 
 class TransformerModel:
     def __init__(
@@ -47,23 +42,26 @@ class TransformerModel:
         threshold,
         num_classes,
     ):
-        self.path = path
-        self.n_samples = n_samples
-        self.random_state = random_state
-        self.max_len = max_len
-        self.train_batch_size = train_batch_size
-        self.valid_batch_size = valid_batch_size
-        self.epochs = epochs
-        self.learning_rate = learning_rate
-        self.threshold = threshold
-        self.num_classes = num_classes
+        self.path: str = path
+        self.n_samples: int = n_samples
+        self.random_state: int = random_state
+        self.max_len: int = max_len
+        self.train_batch_size: int = train_batch_size
+        self.valid_batch_size: int = valid_batch_size
+        self.epochs: int = epochs
+        self.learning_rate: float = learning_rate
+        self.threshold: float = threshold
+        self.num_classes: int = num_classes
 
         self.train_outputs = self.valid_outputs = self.test_outputs = 0
         self.train_targets = self.valid_targets = self.test_targets = 0
 
     def __training_setup(self):
-        """hidden method to prepare dataset.
-        split it, prepare weights formula, initialize tokenizer, transform to custom pytorch datasets
+        """Prepare data, return nothing.
+
+        ReadPrepare train & test csv files,split df on train & valid & test,
+        setup formula for weights prepare weights formula, init tokenizer,
+        transform to custom pytorch datasets, init model and optimizer
         """
         # ReadPrepare train & test csv files
         rp = ReadPrepare(
@@ -71,7 +69,7 @@ class TransformerModel:
         ).data_process()  # csv -> pd.DataFrame
 
         # Split df on train & valid & test
-        splitter = Split(df=rp, test_size=0.3)
+        splitter = Split(df=rp, test_size=0.3, random_state=RANDOM_STATE)
         train_data = splitter.get_train_data().reset_index()  # -> pd.DataFrame
         valid_data = splitter.get_valid_data().reset_index()  # -> pd.DataFrame
         test_data = splitter.get_test_data().reset_index()  # -> pd.DataFrame
@@ -111,22 +109,25 @@ class TransformerModel:
             "shuffle": False,
             # 'num_workers': 8
         }
+
         # Iterators of datasets
         self.training_loader = DataLoader(train_set, **train_params)
         self.valid_loader = DataLoader(valid_set, **val_params)
         self.test_loader = DataLoader(test_set, **val_params)
+
         # Init model
         self.model = DistilBERTClass(num_classes=self.num_classes).to(DEVICE)
+
         # Optimizer
         self.optimizer = torch.optim.Adam(
             params=self.model.parameters(), lr=self.learning_rate
         )
 
     def train(self):
-        """train data and save model"""
+        """get __training_setup() data, train it and save model"""
         self.__training_setup()
 
-        """fit and evaluate train subset"""
+        # Fit train subset
         for epoch in range(self.epochs):
             print("epoch", epoch)
             RunTrainValidTest(
@@ -135,6 +136,8 @@ class TransformerModel:
                 weights=self.weights,
                 optimizer=self.optimizer,
             ).run_train(epoch)
+
+        # Evaluate train subset
         outputs, self.train_targets = RunTrainValidTest(
             model=self.model,
             loader=self.training_loader,
@@ -142,13 +145,12 @@ class TransformerModel:
             optimizer=self.optimizer,
         ).run_train(epoch=self.epochs)
 
-        """Toxicity threshold"""
+        # Predicted Toxicity
+        # Fill self.train_outputs with True or False based on the
+        # converted np.array(outputs) and the defined toxicity threshold.
         self.train_outputs = np.array(outputs) >= self.threshold
-
-        """Save model"""
-        # self.model._save(
-        #     epoch=self.epochs, model=self.model, optimizer=self.optimizer
-        # )  # TODO: should we save with ability to train again???
+        # self.train_targets=np.array(self.train_targets)
+        # Save model
         self.model.save()
 
     def predict(self):
@@ -237,7 +239,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--learning_rate", help="Learning rate", default=1e-05
     )  # 0.001, 0.005, 0.01, 0.05, 0.1
-    parser.add_argument("--n_samples", help="How many samples to pass?", default=600)
+    parser.add_argument("--n_samples", help="How many samples to pass?", default=800)
     parser.add_argument(
         "--threshold", help="What's the threshold for toxicity?", default=0.5
     )
