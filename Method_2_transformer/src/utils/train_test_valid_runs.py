@@ -36,7 +36,8 @@ class RunTrainValidTest:
             tuple[list, list]: Model outputs and corresponding targets.
         """
         self.model.train()
-        fin_outputs = fin_targets = []
+        fin_outputs = []
+        fin_targets = []
         for _, data in tqdm(enumerate(self.loader, 0)):
             ids = data["ids"].to(DEVICE, dtype=torch.long)
             mask = data["mask"].to(DEVICE, dtype=torch.long)
@@ -53,9 +54,8 @@ class RunTrainValidTest:
             loss.backward()
             self.optimizer.step()
 
-            fin_targets.extend(targets.cpu().detach().numpy().tolist())
-            # fin_targets.extend(targets.cpu().detach().numpy())
-            fin_outputs.extend(torch.sigmoid(outputs).cpu().detach().numpy().tolist())
+            fin_targets.extend(targets.cpu().detach().numpy())
+            fin_outputs.extend(torch.sigmoid(outputs).cpu().detach().numpy())
         return fin_outputs, fin_targets
 
     def run_validation(self) -> tuple[list, list]:
@@ -65,7 +65,8 @@ class RunTrainValidTest:
         Returns:
             tuple[list, list]: Model outputs and corresponding targets.
         """
-        fin_outputs = fin_targets = []
+        fin_outputs = []
+        fin_targets = []
         self.model.eval()
         with torch.no_grad():
             for _, data in enumerate(self.loader, 0):
@@ -88,7 +89,8 @@ class RunTrainValidTest:
             tuple[list, list]: Model outputs and corresponding targets.
         """
         self.model.eval()
-        fin_outputs = fin_targets = []
+        fin_outputs = []
+        fin_targets = []
         with torch.inference_mode():
             for _, data in enumerate(self.loader, 0):
                 ids = data["ids"].to(DEVICE, dtype=torch.long)

@@ -76,6 +76,8 @@ class Split:
         The proportion of the DataFrame to use for testing.
     stratify_by : str, optional (default='threat')
         Use column name for stratification.
+    random_state : int, optional (default=42)
+        Random state.
 
     Returns:
     --------

@@ -7,7 +7,8 @@
 
 This project aims to create an efficient classifier for identifying toxic comments on forums, Telegram channels, and similar platforms. Driven by the client's needs, the model is designed to operate in real-time and can also be triggered at intervals or on demand. Upon detecting objectively toxic comments, the algorithm will activate. As per the algorithm's architecture, the corresponding tools will either automatically hide the comment, temporarily block the commenter, or even apply a ban.
 
-The severity of actions can be configured based on the predict_proba output of the model and the platform's moderation policy. In an ideal scenario, when a certain toxicity threshold is reached, the comment is hidden, and the algorithm sends it for review by administrators. Essentially, the model requires a Human-in-the-loop process for these cases.## Approaches Tried
+The severity of actions can be configured based on the predict_proba output of the model and the platform's moderation policy. In an ideal scenario, when a certain toxicity threshold is reached, the comment is hidden, and the algorithm sends it for review by administrators. Essentially, the model requires a Human-in-the-loop process for these cases.
+## Approaches Tried
 
 - **Text Embeddings**: Experimented with various embeddings including TF-IDF, FastText, and Spacy (-sm and -md models).
 - **Binary Classification Algorithms**: Explored Support Vector Classifier (SVC), XGBoost, and LightGBM for binary toxicity classification.

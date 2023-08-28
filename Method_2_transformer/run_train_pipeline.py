@@ -87,15 +87,15 @@ class TransformerModel:
         self.weights = torch.tensor([weights]).to(DEVICE)
 
         # Tokenizer
-        tokenizer = DistilBertTokenizer.from_pretrained(
+        self.tokenizer = DistilBertTokenizer.from_pretrained(
             "distilbert-base-uncased", truncation=True, do_lower_case=True
         )
 
         # Custom pytorch datasets
-        train_set = MultiLabelDataset(train_data, tokenizer, self.max_len)
-        valid_set = MultiLabelDataset(valid_data, tokenizer, self.max_len)
+        train_set = MultiLabelDataset(train_data, self.tokenizer, self.max_len)
+        valid_set = MultiLabelDataset(valid_data, self.tokenizer, self.max_len)
         test_set = MultiLabelDataset(
-            test_data, tokenizer, self.max_len
+            test_data, self.tokenizer, self.max_len
         )  # , new_data=True)
 
         train_params = {
@@ -149,7 +149,7 @@ class TransformerModel:
         # Fill self.train_outputs with True or False based on the
         # converted np.array(outputs) and the defined toxicity threshold.
         self.train_outputs = np.array(outputs) >= self.threshold
-        # self.train_targets=np.array(self.train_targets)
+
         # Save model
         self.model.save()
 
@@ -211,6 +211,31 @@ class TransformerModel:
                 """"Evaluate and log test metrics"""
                 log_metrics(self.test_targets, self.test_outputs, label="test")
 
+    def sentence_predict(self, input_text):
+        # Tokenize and format input_text
+        inputs = self.tokenizer.encode_plus(
+            input_text,
+            add_special_tokens=True,
+            max_length=self.max_seq_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        )
+
+        input_ids = inputs["input_ids"].to(DEVICE)
+        attention_mask = inputs["attention_mask"].to(DEVICE)
+        token_type_ids = inputs["token_type_ids"].to(DEVICE)
+
+        # Perform model inference
+        with torch.no_grad():
+            outputs = self.model(input_ids, attention_mask, token_type_ids)
+
+        # Interpret the model's output for prediction (e.g., applying a threshold)
+        predicted_probs = torch.sigmoid(outputs)
+        predicted_classes = (predicted_probs >= self.threshold).cpu().numpy()
+
+        return predicted_classes
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
@@ -220,8 +245,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path",
         help="Data path",
-        default="D:/Programming/DB's/toxic_db_for_transformer/train.csv",  # Home-PC
-        # default="D:/Programming/db's/toxicity_kaggle_1/train.csv",  # Work-PC
+        # default="D:/Programming/DB's/toxic_db_for_transformer/train.csv",  # Home-PC
+        default="D:/Programming/db's/toxicity_kaggle_1/train.csv",  # Work-PC
     )
     parser.add_argument(
         "--random_state", help="Choose seed for random state", default=RANDOM_STATE
@@ -263,5 +288,6 @@ if __name__ == "__main__":
 
         classifier.train()
         classifier.predict()
+        print(classifier.sentence_predict("hello jonny you are great"))
         for eval_type in ["train", "valid", "test"]:
             classifier.evaluate(type_=eval_type)
