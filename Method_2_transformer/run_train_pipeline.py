@@ -245,8 +245,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path",
         help="Data path",
-        # default="D:/Programming/DB's/toxic_db_for_transformer/train.csv",  # Home-PC
-        default="D:/Programming/db's/toxicity_kaggle_1/train.csv",  # Work-PC
+        default="D:/Programming/DB's/toxic_db_for_transformer/train.csv",  # Home-PC
+        # default="D:/Programming/db's/toxicity_kaggle_1/train.csv",  # Work-PC
     )
     parser.add_argument(
         "--random_state", help="Choose seed for random state", default=RANDOM_STATE
@@ -288,6 +288,5 @@ if __name__ == "__main__":
 
         classifier.train()
         classifier.predict()
-        print(classifier.sentence_predict("hello jonny you are great"))
         for eval_type in ["train", "valid", "test"]:
             classifier.evaluate(type_=eval_type)
