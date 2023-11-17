@@ -1,13 +1,22 @@
+<<<<<<< HEAD
 # morea_MY
 run_train.sh
 run_train.py
 .ipynb_checkpoints/
 mlruns/
+=======
+#  Morea_MY
+>>>>>>> dev
 .idea/
 Task_description.txt
-data/
-src/temp/
-Testing/
+Method_1_standart/data/
+Method_1_standart/run_train.py
+Method_1_standart/run_train.sh
+Method_1_standart/mlruns/
+Method_1_standart/src/temp/
+Method_2_transformer/mlruns/
+Method_2_transformer/Testing/
+Method_2_transformer/model/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
